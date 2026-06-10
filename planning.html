@@ -228,22 +228,35 @@ function switchRoom(id) {
   }
 }
 
-// ── Chargement ICS ───────────────────────────────────────────
+// ── Chargement ICS (avec fallback CORS proxy) ────────────────
 async function loadICS(url) {
+  let text;
+
+  // 1ère tentative : fetch direct (fonctionne avec Google Calendar)
   try {
     const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text   = await res.text();
-    const events = parseICS(text);
-    renderEvents(events);
-    setICSStatus('ok', `${events.length} événement(s)`);
-  } catch(e) {
-    setICSStatus('err', 'Impossible de charger (CORS ou URL invalide)');
-    document.getElementById('events-list').innerHTML = `<div class="empty-state" style="color:var(--red);">
-      Erreur : ${escHtml(e.message)}<br>
-      <span style="font-size:11px;">Vérifiez que l'URL ICS est publique.</span>
-    </div>`;
+    text = await res.text();
+  } catch(e1) {
+    // 2ème tentative : via proxy CORS (pour les sites sans en-têtes CORS)
+    try {
+      const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+      const res2  = await fetch(proxy, { cache: 'no-store' });
+      if (!res2.ok) throw new Error(`HTTP ${res2.status}`);
+      text = await res2.text();
+    } catch(e2) {
+      setICSStatus('err', 'URL inaccessible');
+      document.getElementById('events-list').innerHTML = `<div class="empty-state" style="color:var(--red);">
+        Impossible de charger le calendrier.<br>
+        <span style="font-size:11px;">Vérifiez que l'URL ICS est correcte et publique.</span>
+      </div>`;
+      return;
+    }
   }
+
+  const events = parseICS(text);
+  renderEvents(events);
+  setICSStatus('ok', `${events.length} événement(s)`);
 }
 
 function refreshICS() {
