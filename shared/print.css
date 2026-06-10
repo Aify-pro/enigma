@@ -19,7 +19,14 @@
     color: #000 !important;
     font-family: 'Courier New', Courier, monospace;
     font-size: 14px;
+    font-weight: bold !important;
     line-height: 1.5;
+  }
+
+  /* Tout le texte en noir gras */
+  * {
+    color: #000 !important;
+    font-weight: bold !important;
   }
 
   body > *                   { display: none !important; }
