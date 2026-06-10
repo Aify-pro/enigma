@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rapprochements — Enigma</title>
+  <link rel="stylesheet" href="shared/style.css">
+  <link rel="stylesheet" href="shared/print.css">
+  <style>
+    .stat-grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px,1fr)); gap: 12px; margin-bottom: 20px; }
+    .breakdown-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    @media(max-width:700px){ .breakdown-grid{ grid-template-columns:1fr; } }
+    .fund-row { display: flex; gap: 12px; align-items: flex-end; margin-bottom: 12px; }
+    .fund-row .field { margin: 0; flex: 1; }
+    .diff-ok   { color: var(--green); font-weight: 700; }
+    .diff-warn { color: var(--yellow); font-weight: 700; }
+    .diff-err  { color: var(--red); font-weight: 700; }
+  </style>
+</head>
+<body>
+<nav class="navbar">
+  <a class="navbar-brand" href="caisse.html">Enigma <span>Escape Game</span></a>
+  <a class="nav-link" href="caisse.html">🎫 Caisse</a>
+  <a class="nav-link" href="depenses.html">💸 Dépenses</a>
+  <a class="nav-link active" id="nav-rapprochements" href="rapprochements.html">📊 Rapprochements</a>
+  <a class="nav-link hidden" id="nav-admin" href="admin.html">⚙️ Admin</a>
+  <span id="nav-user" style="font-size:11px;color:var(--text3);margin-left:auto;padding:0 12px;"></span>
+  <button class="btn btn-ghost btn-sm" onclick="logout()">Déconnexion</button>
+</nav>
+<div id="toast-container"></div>
+
+<!-- Print zone -->
+<div id="print-report"><div class="report" id="report-content"></div></div>
+
+<div id="page-content" class="page">
+  <div class="flex-between" style="margin-bottom:20px;">
+    <div class="page-title" style="margin:0;">📊 Rapprochements</div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input type="date" id="sel-date" onchange="loadDay()" style="width:160px;" />
+      <button class="btn btn-ghost btn-sm" onclick="printReport()">🖨️ Imprimer</button>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stat-grid2">
+    <div class="stat-card"><div class="stat-label">Recettes</div><div class="stat-value" id="s-revenue">—</div></div>
+    <div class="stat-card"><div class="stat-label">Espèces</div><div class="stat-value" id="s-cash">—</div></div>
+    <div class="stat-card"><div class="stat-label">Mobile Money</div><div class="stat-value" id="s-mobile">—</div></div>
+    <div class="stat-card"><div class="stat-label">Bons cadeaux</div><div class="stat-value" id="s-voucher">—</div></div>
+    <div class="stat-card"><div class="stat-label">Dépenses</div><div class="stat-value" id="s-expenses">—</div></div>
+    <div class="stat-card"><div class="stat-label">Sessions</div><div class="stat-value" id="s-sessions">—</div></div>
+  </div>
+
+  <!-- Fond de caisse -->
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-title">Fond de caisse</div>
+    <div class="fund-row">
+      <div class="field"><label>Fond d'ouverture (FCFA)</label><input type="number" id="fund-open" min="0" value="0" oninput="updateDiff()" /></div>
+      <div class="field"><label>Fond de clôture (FCFA)</label><input type="number" id="fund-close" min="0" value="0" oninput="updateDiff()" /></div>
+      <div class="field"><label>Opérateur</label><input type="text" id="fund-op" placeholder="Prénom" /></div>
+      <div><button class="btn btn-primary" onclick="saveFund()">Enregistrer</button></div>
+    </div>
+    <div style="display:flex;gap:24px;font-size:13px;flex-wrap:wrap;">
+      <span>Espèces théoriques : <strong id="cash-theo">—</strong></span>
+      <span>Écart caisse : <strong id="cash-diff">—</strong></span>
+    </div>
+  </div>
+
+  <div class="breakdown-grid">
+    <div class="card">
+      <div class="card-title">Sessions du jour</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Heure</th><th>Salle</th><th>Jrs</th><th>Total</th><th>Mode</th><th>Ticket</th></tr></thead>
+          <tbody id="sessions-body"><tr><td colspan="6" class="text-muted" style="text-align:center;padding:16px;">Chargement…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Dépenses validées du jour</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Catégorie</th><th>Description</th><th>Montant</th></tr></thead>
+          <tbody id="expenses-body"><tr><td colspan="3" class="text-muted" style="text-align:center;padding:16px;">Chargement…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Articles vendus</div>
+    <div id="items-summary" class="text-muted" style="font-size:13px;">—</div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="shared/config.js"></script>
+<script src="shared/auth.js"></script>
+<script>
+const CURRENCY = ENIGMA_CONFIG.currency;
+let dayData = { tickets:[], expenses:[], items:[], fund:null };
+
+// ── Init ─────────────────────────────────────────────────────
+window.addEventListener('load', async () => {
+  try { await requireAdmin(); } catch(e) { return; }
+  document.getElementById('sel-date').value = today();
+  loadDay();
+});
+
+function today() { return new Date().toISOString().slice(0,10); }
+
+// ── Load day ──────────────────────────────────────────────────
+async function loadDay() {
+  const date = document.getElementById('sel-date').value || today();
+  const [tRes,eRes,iRes,fRes] = await Promise.all([
+    sb.from('tickets').select('*').eq('session_date',date).eq('status','confirmed').order('time_slot'),
+    sb.from('expenses').select('*').eq('date',date).eq('status','validated').order('created_at'),
+    sb.from('ticket_items').select('*, tickets!inner(session_date)').eq('tickets.session_date',date),
+    sb.from('daily_fund').select('*').eq('date',date).maybeSingle(),
+  ]);
+  dayData = { tickets:tRes.data||[], expenses:eRes.data||[], items:iRes.data||[], fund:fRes.data||null };
+  renderStats(); renderSessions(); renderExpenses(); renderItems(); renderFund(); updateDiff();
+}
+
+function renderStats() {
+  const {tickets,expenses}=dayData;
+  setText('s-revenue',  fmt(tickets.reduce((s,t)=>s+t.total_price_xof,0)));
+  setText('s-cash',     fmt(tickets.reduce((s,t)=>s+t.payment_especes_xof,0)));
+  setText('s-mobile',   fmt(tickets.reduce((s,t)=>s+t.payment_mobile_xof,0)));
+  setText('s-voucher',  fmt(tickets.reduce((s,t)=>s+t.payment_voucher_xof,0)));
+  setText('s-expenses', fmt(expenses.reduce((s,e)=>s+e.amount_xof,0)));
+  setText('s-sessions', tickets.length);
+}
+
+function renderSessions() {
+  const tbody=document.getElementById('sessions-body');
+  if (!dayData.tickets.length){tbody.innerHTML='<tr><td colspan="6" class="text-muted" style="text-align:center;padding:16px;">Aucune session</td></tr>';return;}
+  tbody.innerHTML=dayData.tickets.map(t=>{
+    const parts=[];
+    if(t.payment_especes_xof>0)parts.push(`Esp:${fmt(t.payment_especes_xof)}`);
+    if(t.payment_mobile_xof>0)parts.push(`Mob:${fmt(t.payment_mobile_xof)}`);
+    if(t.payment_voucher_xof>0)parts.push(`BC:${fmt(t.payment_voucher_xof)}`);
+    return `<tr><td>${t.time_slot}</td><td>${escHtml(t.room_name)}</td><td>${t.num_players}</td><td style="font-weight:600;">${fmt(t.total_price_xof)}</td><td style="font-size:11px;">${parts.join('<br>')}</td><td style="font-size:11px;color:var(--text3);">${t.ticket_number}</td></tr>`;
+  }).join('');
+}
+
+function renderExpenses() {
+  const tbody=document.getElementById('expenses-body');
+  if (!dayData.expenses.length){tbody.innerHTML='<tr><td colspan="3" class="text-muted" style="text-align:center;padding:16px;">Aucune dépense validée</td></tr>';return;}
+  tbody.innerHTML=dayData.expenses.map(e=>{
+    const cat=ENIGMA_CONFIG.expenseCategories.find(c=>c.value===e.category);
+    return `<tr><td>${cat?cat.label:e.category}</td><td>${escHtml(e.description)}</td><td style="font-weight:600;">${fmt(e.amount_xof)}</td></tr>`;
+  }).join('');
+}
+
+function renderItems() {
+  const {items}=dayData;
+  if (!items.length){document.getElementById('items-summary').textContent='Aucun article vendu';return;}
+  const agg={};
+  items.forEach(i=>{if(!agg[i.name])agg[i.name]={qty:0,total:0};agg[i.name].qty+=i.qty;agg[i.name].total+=i.total_xof;});
+  const total=items.reduce((s,i)=>s+i.total_xof,0);
+  const rows=Object.entries(agg).map(([n,a])=>`<span style="margin-right:16px;"><strong>${escHtml(n)}</strong>: ${a.qty}× → ${fmt(a.total)}</span>`).join('');
+  document.getElementById('items-summary').innerHTML=`${rows}<br><br><strong>Total articles : ${fmt(total)}</strong>`;
+}
+
+function renderFund() {
+  const f=dayData.fund; if(!f)return;
+  document.getElementById('fund-open').value  = f.opening_fund_xof||0;
+  document.getElementById('fund-close').value = f.closing_fund_xof||0;
+  document.getElementById('fund-op').value    = f.operator_name||'';
+}
+
+function updateDiff() {
+  const {tickets,expenses}=dayData;
+  const cash=tickets.reduce((s,t)=>s+t.payment_especes_xof,0);
+  const expCash=expenses.reduce((s,e)=>s+e.amount_xof,0);
+  const open=parseInt(document.getElementById('fund-open').value)||0;
+  const close=parseInt(document.getElementById('fund-close').value)||0;
+  const theoretical=open+cash-expCash;
+  const diff=close-theoretical;
+  setText('cash-theo',fmt(theoretical));
+  const diffEl=document.getElementById('cash-diff');
+  diffEl.textContent=(diff>=0?'+':'')+fmt(diff);
+  diffEl.className=diff===0?'diff-ok':Math.abs(diff)<5000?'diff-warn':'diff-err';
+}
+
+async function saveFund() {
+  const date=document.getElementById('sel-date').value||today();
+  const open=parseInt(document.getElementById('fund-open').value)||0;
+  const close=parseInt(document.getElementById('fund-close').value)||0;
+  const op=document.getElementById('fund-op').value.trim();
+  const {error}=await sb.from('daily_fund').upsert([{date,opening_fund_xof:open,closing_fund_xof:close,operator_name:op}],{onConflict:'date'});
+  if (error) return toast('Erreur sauvegarde','err');
+  toast('Fond de caisse enregistré','ok'); loadDay();
+}
+
+// ── Print ─────────────────────────────────────────────────────
+function printReport() {
+  const date=document.getElementById('sel-date').value||today();
+  const {tickets,expenses,items,fund}=dayData;
+  const revenue=tickets.reduce((s,t)=>s+t.total_price_xof,0);
+  const cash=tickets.reduce((s,t)=>s+t.payment_especes_xof,0);
+  const mobile=tickets.reduce((s,t)=>s+t.payment_mobile_xof,0);
+  const voucher=tickets.reduce((s,t)=>s+t.payment_voucher_xof,0);
+  const expTotal=expenses.reduce((s,e)=>s+e.amount_xof,0);
+  const itemsTotal=items.reduce((s,i)=>s+i.total_xof,0);
+  const open=fund?(fund.opening_fund_xof||0):0;
+  const close=fund?(fund.closing_fund_xof||0):0;
+  const theoretical=open+cash-expTotal;
+  const diff=close-theoretical;
+  const agg={};items.forEach(i=>{if(!agg[i.name])agg[i.name]={qty:0,total:0};agg[i.name].qty+=i.qty;agg[i.name].total+=i.total_xof;});
+  const sessHTML=tickets.map(t=>{
+    const parts=[];if(t.payment_especes_xof>0)parts.push(`Esp:${fmt(t.payment_especes_xof)}`);if(t.payment_mobile_xof>0)parts.push(`Mob:${fmt(t.payment_mobile_xof)}`);if(t.payment_voucher_xof>0)parts.push(`BC:${fmt(t.payment_voucher_xof)}`);
+    return `<div class="report-session-row"><span class="col-time">${t.time_slot}</span><span class="col-room">${escHtml(t.room_name)}</span><span class="col-pax">${t.num_players}j</span><span class="col-total">${fmt(t.total_price_xof)}</span></div><div class="report-session-sub">${t.ticket_number} | ${parts.join(' / ')}</div>`;
+  }).join('')||'<div style="font-size:9px;color:#555;">Aucune session</div>';
+  const expHTML=expenses.map(e=>{const cat=ENIGMA_CONFIG.expenseCategories.find(c=>c.value===e.category);return`<div class="report-item-row"><span class="col-name">${cat?cat.label.replace(/^\S+\s/,''):e.category}</span><span class="col-qty">${escHtml(e.description).substring(0,12)}</span><span class="col-total">−${fmt(e.amount_xof)}</span></div>`;}).join('')||'<div style="font-size:9px;color:#555;">Aucune dépense</div>';
+  const itemsHTML=Object.entries(agg).map(([n,a])=>`<div class="report-item-row"><span class="col-name">${escHtml(n)}</span><span class="col-qty">${a.qty}</span><span class="col-total">${fmt(a.total)}</span></div>`).join('')||'<div style="font-size:9px;color:#555;">Aucun article</div>';
+  document.getElementById('report-content').innerHTML=`
+    <div class="report-header"><div class="biz-name">${ENIGMA_CONFIG.businessName}</div><div class="report-title">Rapport de rapprochement</div><div class="report-date">${formatDate(date)}</div></div>
+    <div class="report-section-title">Sessions (${tickets.length})</div>
+    <div class="report-session-row" style="font-size:8px;font-weight:bold;border-bottom:1px solid #000;margin-bottom:2mm;"><span class="col-time">Heure</span><span class="col-room">Salle</span><span class="col-pax">Jrs</span><span class="col-total">Total</span></div>
+    ${sessHTML}
+    ${items.length?`<div class="report-section-title">Articles</div><div class="report-item-row" style="font-size:8px;font-weight:bold;border-bottom:1px solid #000;margin-bottom:2mm;"><span class="col-name">Article</span><span class="col-qty">Qté</span><span class="col-total">Total</span></div>${itemsHTML}`:''}
+    ${expenses.length?`<div class="report-section-title">Dépenses</div>${expHTML}`:''}
+    <div class="report-section-title">Récapitulatif</div>
+    <div class="report-totals">
+      <div class="report-total-row"><span>Recettes</span><span>${fmt(revenue)}</span></div>
+      ${itemsTotal>0?`<div class="report-total-row"><span>Articles</span><span>${fmt(itemsTotal)}</span></div>`:''}
+      ${expTotal>0?`<div class="report-total-row"><span>Dépenses</span><span>−${fmt(expTotal)}</span></div>`:''}
+      <div class="report-total-row grand"><span>NET</span><span>${fmt(revenue-expTotal)}</span></div>
+      <div style="height:2mm;"></div>
+      ${cash>0?`<div class="report-total-row"><span>Espèces</span><span>${fmt(cash)}</span></div>`:''}
+      ${mobile>0?`<div class="report-total-row"><span>Mobile Money</span><span>${fmt(mobile)}</span></div>`:''}
+      ${voucher>0?`<div class="report-total-row"><span>Bons cadeaux</span><span>${fmt(voucher)}</span></div>`:''}
+    </div>
+    <div class="report-section-title">Fond de caisse</div>
+    <div class="report-totals">
+      <div class="report-total-row"><span>Ouverture</span><span>${fmt(open)}</span></div>
+      <div class="report-total-row"><span>+ Espèces recettes</span><span>${fmt(cash)}</span></div>
+      ${expTotal>0?`<div class="report-total-row"><span>− Dépenses</span><span>−${fmt(expTotal)}</span></div>`:''}
+      <div class="report-total-row grand"><span>Théorique</span><span>${fmt(theoretical)}</span></div>
+      <div class="report-total-row"><span>Clôture réel</span><span>${fmt(close)}</span></div>
+      <div class="report-total-row" style="font-weight:bold;"><span>Écart</span><span>${diff>=0?'+':''}${fmt(diff)}</span></div>
+    </div>
+    <div class="report-footer">Imprimé le ${new Date().toLocaleString('fr-FR')}<br>${ENIGMA_CONFIG.businessName}</div>`;
+  document.body.classList.add('print-report'); window.print(); document.body.classList.remove('print-report');
+}
+
+// ── Helpers ───────────────────────────────────────────────────
+function fmt(n){return Number(n||0).toLocaleString('fr-FR')+' '+CURRENCY;}
+function formatDate(d){if(!d)return'';const[y,m,day]=d.split('-');return`${day}/${m}/${y}`;}
+function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function setText(id,v){const e=document.getElementById(id);if(e)e.textContent=v;}
+function toast(msg,type='info'){const c=document.getElementById('toast-container');const t=document.createElement('div');t.className=`toast toast-${type==='ok'?'ok':type==='err'?'err':'info'}`;t.textContent=msg;c.appendChild(t);setTimeout(()=>t.remove(),3500);}
+</script>
+</body>
+</html>

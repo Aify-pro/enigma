@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dépenses — Enigma</title>
+  <link rel="stylesheet" href="shared/style.css">
+  <style>
+    .layout { display: grid; grid-template-columns: 380px 1fr; gap: 16px; align-items: start; }
+    @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+    .status-pending   { color: var(--yellow); }
+    .status-validated { color: var(--green); }
+    .status-rejected  { color: var(--red); }
+    .notice {
+      background: rgba(250,204,21,.08); border: 1px solid rgba(250,204,21,.3);
+      border-radius: 8px; padding: 10px 14px; font-size: 12px;
+      color: var(--yellow); margin-bottom: 14px;
+    }
+  </style>
+</head>
+<body>
+<nav class="navbar">
+  <a class="navbar-brand" href="caisse.html">Enigma <span>Escape Game</span></a>
+  <a class="nav-link" href="caisse.html">🎫 Caisse</a>
+  <a class="nav-link active" href="depenses.html">💸 Dépenses</a>
+  <a class="nav-link hidden" id="nav-rapprochements" href="rapprochements.html">📊 Rapprochements</a>
+  <a class="nav-link hidden" id="nav-admin" href="admin.html">⚙️ Admin</a>
+  <span id="nav-user" style="font-size:11px;color:var(--text3);margin-left:auto;padding:0 12px;"></span>
+  <button class="btn btn-ghost btn-sm" onclick="logout()">Déconnexion</button>
+</nav>
+<div id="toast-container"></div>
+
+<div class="page">
+  <div class="page-title">💸 Dépenses</div>
+
+  <div class="layout">
+
+    <!-- ── Formulaire (commun staff + admin) ──────────────── -->
+    <div class="card">
+      <div class="card-title">Nouvelle dépense</div>
+      <div class="field"><label>Date *</label><input type="date" id="inp-date" /></div>
+      <div class="field"><label>Montant (FCFA) *</label><input type="number" id="inp-amount" min="1" placeholder="0" /></div>
+      <div class="field"><label>Catégorie *</label><select id="inp-cat"></select></div>
+      <div class="field"><label>Description</label><textarea id="inp-desc" rows="2" placeholder="Détails de la dépense…"></textarea></div>
+      <div class="field"><label>Référence reçu</label><input type="text" id="inp-ref" placeholder="N° facture, reçu…" /></div>
+      <div class="field"><label>Votre prénom *</label><input type="text" id="inp-op" placeholder="Prénom" /></div>
+      <button class="btn btn-primary btn-full" onclick="addExpense()">+ Soumettre la dépense</button>
+    </div>
+
+    <!-- ── Vue STAFF : demandes en attente uniquement ─────── -->
+    <div id="section-staff" class="card hidden">
+      <div class="card-title">Demandes en attente de validation</div>
+      <div class="notice">
+        ℹ️ Vos demandes sont soumises à la validation d'un responsable. Les demandes approuvées ou rejetées n'apparaissent plus ici.
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Catégorie</th><th>Description</th><th>Montant</th><th>Par</th></tr>
+          </thead>
+          <tbody id="staff-body">
+            <tr><td colspan="5" class="text-muted" style="text-align:center;padding:20px;">Chargement…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Vue ADMIN : liste complète + validation ────────── -->
+    <div id="section-admin" class="hidden">
+      <div class="card">
+        <div class="flex-between" style="margin-bottom:14px;">
+          <div class="card-title" style="margin:0;">Toutes les dépenses</div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="date" id="filter-date" onchange="loadExpensesAdmin()" style="width:150px;" />
+            <button class="btn btn-ghost btn-sm" onclick="clearFilter()">Tout afficher</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Date</th><th>Catégorie</th><th>Description</th><th>Montant</th><th>Opérateur</th><th>Statut</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="admin-body">
+              <tr><td colspan="7" class="text-muted" style="text-align:center;padding:20px;">Chargement…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="expense-summary" style="margin-top:16px;"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="shared/config.js"></script>
+<script src="shared/auth.js"></script>
+<script>
+const CURRENCY = ENIGMA_CONFIG.currency;
+
+window.addEventListener('load', async () => {
+  try { await requireAuth(); } catch(e) { return; }
+
+  document.getElementById('inp-date').value = today();
+
+  ENIGMA_CONFIG.expenseCategories.forEach(c => {
+    document.getElementById('inp-cat').insertAdjacentHTML('beforeend',
+      `<option value="${c.value}">${c.label}</option>`);
+  });
+
+  if (isAdmin()) {
+    document.getElementById('filter-date').value = today();
+    document.getElementById('section-admin').classList.remove('hidden');
+    loadExpensesAdmin();
+  } else {
+    document.getElementById('section-staff').classList.remove('hidden');
+    loadExpensesStaff();
+  }
+});
+
+function today() { return new Date().toISOString().slice(0,10); }
+
+// ── Vue staff : uniquement les dépenses en attente ────────────
+async function loadExpensesStaff() {
+  const { data, error } = await sb.from('expenses').select('*')
+    .eq('status','pending').order('date',{ascending:false}).order('created_at',{ascending:false});
+  if (error) return toast('Erreur chargement','err');
+  const tbody = document.getElementById('staff-body');
+  if (!data || !data.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-muted" style="text-align:center;padding:20px;">Aucune demande en attente</td></tr>';
+    return;
+  }
+  tbody.innerHTML = data.map(e => {
+    const cat = ENIGMA_CONFIG.expenseCategories.find(c => c.value === e.category);
+    return `<tr>
+      <td>${formatDate(e.date)}</td>
+      <td>${cat ? cat.label : e.category}</td>
+      <td>${escHtml(e.description)}</td>
+      <td style="font-weight:600;">${fmt(e.amount_xof)}</td>
+      <td>${escHtml(e.operator_name)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Vue admin : toutes les dépenses + validation ───────────────
+async function loadExpensesAdmin() {
+  const fd = document.getElementById('filter-date').value;
+  let q = sb.from('expenses').select('*').order('date',{ascending:false}).order('created_at',{ascending:false});
+  if (fd) q = q.eq('date', fd);
+  const { data, error } = await q.limit(300);
+  if (error) return toast('Erreur chargement','err');
+
+  const tbody = document.getElementById('admin-body');
+  if (!data || !data.length) {
+    tbody.innerHTML = `<tr><td colspan="7" class="text-muted" style="text-align:center;padding:20px;">Aucune dépense${fd?' ce jour':''}</td></tr>`;
+    document.getElementById('expense-summary').innerHTML = '';
+    return;
+  }
+
+  tbody.innerHTML = data.map(e => {
+    const cat    = ENIGMA_CONFIG.expenseCategories.find(c => c.value === e.category);
+    const sCls   = e.status==='validated'?'status-validated':e.status==='rejected'?'status-rejected':'status-pending';
+    const sLabel = e.status==='validated'?'✓ Validée':e.status==='rejected'?'✗ Rejetée':'⏳ En attente';
+    const vInfo  = e.validated_by ? `<br><span style="font-size:10px;color:var(--text3);">par ${escHtml(e.validated_by)}</span>` : '';
+    const actions = e.status==='pending'
+      ? `<button class="btn btn-success btn-sm" onclick="changeStatus('${e.id}','validated')">✓</button>
+         <button class="btn btn-danger btn-sm"  onclick="changeStatus('${e.id}','rejected')">✗</button>
+         <button class="btn btn-ghost btn-sm"   onclick="deleteExpense('${e.id}')">🗑</button>`
+      : `<button class="btn btn-ghost btn-sm"   onclick="changeStatus('${e.id}','pending')">↩</button>`;
+    return `<tr>
+      <td>${formatDate(e.date)}</td>
+      <td>${cat?cat.label:e.category}</td>
+      <td>${escHtml(e.description)}<br><span style="font-size:10px;color:var(--text3);">${escHtml(e.receipt_ref)}</span></td>
+      <td style="font-weight:600;">${fmt(e.amount_xof)}</td>
+      <td>${escHtml(e.operator_name)}</td>
+      <td class="${sCls}">${sLabel}${vInfo}</td>
+      <td style="white-space:nowrap;">${actions}</td>
+    </tr>`;
+  }).join('');
+
+  // Résumé
+  const byCat = {}; let total = 0;
+  data.filter(e=>e.status!=='rejected').forEach(e=>{
+    byCat[e.category]=(byCat[e.category]||0)+e.amount_xof; total+=e.amount_xof;
+  });
+  const catHTML = Object.entries(byCat).map(([k,v])=>{
+    const cat=ENIGMA_CONFIG.expenseCategories.find(c=>c.value===k);
+    return `<span style="margin-right:16px;font-size:12px;">${cat?cat.label:k}: <strong>${fmt(v)}</strong></span>`;
+  }).join('');
+  document.getElementById('expense-summary').innerHTML = `
+    <div style="border-top:1px solid var(--border);padding-top:12px;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:8px;">Résumé${fd?' — '+formatDate(fd):''}</div>
+      <div style="margin-bottom:6px;">${catHTML}</div>
+      <div style="font-size:14px;font-weight:700;">Total : ${fmt(total)}</div>
+    </div>`;
+}
+
+// ── Soumettre une dépense (staff + admin) ─────────────────────
+async function addExpense() {
+  const date   = document.getElementById('inp-date').value;
+  const amount = parseInt(document.getElementById('inp-amount').value)||0;
+  const cat    = document.getElementById('inp-cat').value;
+  const desc   = document.getElementById('inp-desc').value.trim();
+  const ref    = document.getElementById('inp-ref').value.trim();
+  const op     = document.getElementById('inp-op').value.trim();
+  if (!date)   return toast('Date requise','err');
+  if (!amount) return toast('Montant requis','err');
+  if (!op)     return toast('Votre prénom est requis','err');
+  const { error } = await sb.from('expenses').insert([{
+    date, amount_xof:amount, category:cat,
+    description:desc, receipt_ref:ref,
+    operator_name:op, status:'pending',
+  }]);
+  if (error) return toast('Erreur enregistrement','err');
+  toast('Demande soumise — en attente de validation','ok');
+  document.getElementById('inp-amount').value='';
+  document.getElementById('inp-desc').value='';
+  document.getElementById('inp-ref').value='';
+  isAdmin() ? loadExpensesAdmin() : loadExpensesStaff();
+}
+
+// ── Actions admin ─────────────────────────────────────────────
+async function changeStatus(id, status) {
+  const { error } = await sb.from('expenses').update({
+    status,
+    validated_by: currentUser.email,
+    validated_at: new Date().toISOString(),
+  }).eq('id', id);
+  if (error) return toast('Erreur mise à jour','err');
+  const labels={validated:'Dépense validée',rejected:'Dépense rejetée',pending:'Remise en attente'};
+  toast(labels[status]||'Mis à jour','ok');
+  loadExpensesAdmin();
+}
+
+async function deleteExpense(id) {
+  if (!confirm('Supprimer cette dépense ?')) return;
+  const { error } = await sb.from('expenses').delete().eq('id', id);
+  if (error) return toast('Erreur suppression','err');
+  toast('Dépense supprimée','ok');
+  loadExpensesAdmin();
+}
+
+function clearFilter() {
+  document.getElementById('filter-date').value='';
+  loadExpensesAdmin();
+}
+
+// ── Helpers ───────────────────────────────────────────────────
+function fmt(n){return Number(n||0).toLocaleString('fr-FR')+' '+CURRENCY;}
+function formatDate(d){if(!d)return'';const[y,m,day]=d.split('-');return`${day}/${m}/${y}`;}
+function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function toast(msg,type='info'){const c=document.getElementById('toast-container');const t=document.createElement('div');t.className=`toast toast-${type==='ok'?'ok':type==='err'?'err':'info'}`;t.textContent=msg;c.appendChild(t);setTimeout(()=>t.remove(),3500);}
+</script>
+</body>
+</html>

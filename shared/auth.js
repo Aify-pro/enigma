@@ -1,0 +1,53 @@
+// ── Client Supabase partagé ───────────────────────────────────
+const sb = supabase.createClient(
+  ENIGMA_CONFIG.supabaseUrl,
+  ENIGMA_CONFIG.supabaseAnonKey,
+  { auth: { persistSession: true, storageKey: 'enigma_auth' } }
+);
+
+let currentUser = null; // { email, role }
+
+// Vérifie la session ; redirige vers login.html si absente.
+async function requireAuth() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) {
+    window.location.href = 'login.html';
+    throw new Error('unauthenticated');
+  }
+  currentUser = {
+    email: session.user.email,
+    role:  (session.user.user_metadata?.role || 'staff').toLowerCase(),
+  };
+  // Afficher l'email dans la nav
+  const navUser = document.getElementById('nav-user');
+  if (navUser) navUser.textContent = currentUser.email;
+  // Afficher Rapprochements et Admin uniquement pour les admins
+  const rapLink   = document.getElementById('nav-rapprochements');
+  const adminLink = document.getElementById('nav-admin');
+  if (currentUser.role === 'admin') {
+    if (rapLink)   rapLink.classList.remove('hidden');
+    if (adminLink) adminLink.classList.remove('hidden');
+  } else {
+    if (adminLink) adminLink.classList.add('hidden');
+  }
+  return session;
+}
+
+// Vérifie session ET rôle admin ; redirige sinon.
+async function requireAdmin() {
+  const session = await requireAuth();
+  if (currentUser.role !== 'admin') {
+    window.location.href = 'caisse.html';
+    throw new Error('unauthorized');
+  }
+  return session;
+}
+
+function isAdmin() {
+  return currentUser?.role === 'admin';
+}
+
+async function logout() {
+  await sb.auth.signOut();
+  window.location.href = 'login.html';
+}

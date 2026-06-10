@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connexion — Enigma</title>
+  <link rel="stylesheet" href="shared/style.css">
+  <style>
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .login-wrap { width: 100%; max-width: 360px; padding: 20px; }
+    .login-logo {
+      text-align: center; font-size: 40px; margin-bottom: 8px;
+    }
+    .login-title {
+      text-align: center; font-size: 22px; font-weight: 700;
+      color: var(--purple); margin-bottom: 4px;
+    }
+    .login-sub {
+      text-align: center; font-size: 12px; color: var(--text3);
+      margin-bottom: 28px;
+    }
+    .login-card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 28px;
+    }
+  </style>
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-logo">🔐</div>
+  <div class="login-title">Enigma</div>
+  <div class="login-sub">Escape Game — Espace staff</div>
+
+  <div class="login-card">
+    <form id="login-form" onsubmit="doLogin(event)">
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="l-email" required autocomplete="email" placeholder="staff@enigma.com" />
+      </div>
+      <div class="field">
+        <label>Mot de passe</label>
+        <input type="password" id="l-pass" required autocomplete="current-password" placeholder="••••••••" />
+      </div>
+      <div id="l-err" style="color:var(--red);font-size:12px;margin-bottom:12px;min-height:16px;"></div>
+      <button type="submit" id="l-btn" class="btn btn-primary btn-full btn-lg">Se connecter</button>
+    </form>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="shared/config.js"></script>
+<script>
+const sb = supabase.createClient(
+  ENIGMA_CONFIG.supabaseUrl,
+  ENIGMA_CONFIG.supabaseAnonKey,
+  { auth: { persistSession: true, storageKey: 'enigma_auth' } }
+);
+
+// Si déjà connecté, aller directement à la caisse
+window.addEventListener('load', async () => {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) window.location.href = 'caisse.html';
+});
+
+async function doLogin(e) {
+  e.preventDefault();
+  const email = document.getElementById('l-email').value.trim();
+  const pass  = document.getElementById('l-pass').value;
+  const btn   = document.getElementById('l-btn');
+  const err   = document.getElementById('l-err');
+
+  btn.disabled = true;
+  btn.textContent = 'Connexion…';
+  err.textContent = '';
+
+  const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+
+  if (error) {
+    err.textContent = error.message === 'Invalid login credentials'
+      ? 'Email ou mot de passe incorrect'
+      : error.message;
+    btn.disabled = false;
+    btn.textContent = 'Se connecter';
+    return;
+  }
+
+  window.location.href = 'caisse.html';
+}
+</script>
+</body>
+</html>
