@@ -1,2 +1,0 @@
-# enigma
-enigma escape game
