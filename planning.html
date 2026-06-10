@@ -125,28 +125,29 @@
 
   <!-- Vue d'une salle -->
   <div id="room-view" style="display:none;">
-    <div class="planning-layout">
 
-      <!-- Calendrier embed (gauche) -->
-      <div class="calendar-wrap" id="calendar-wrap">
-        <div class="setup-guide" id="no-embed-guide">
-          <div style="font-size:36px;margin-bottom:10px;">🗓</div>
-          <h2>Iframe non configurée</h2>
-          <p style="font-size:12px;">Ajoutez une <strong>URL iframe</strong> pour cette salle dans Admin → Salles.</p>
-        </div>
-      </div>
-
-      <!-- Événements ICS (droite) -->
+    <!-- Layout embed + ICS (les deux configurés) -->
+    <div class="planning-layout" id="layout-split" style="display:none;">
+      <div class="calendar-wrap" id="calendar-wrap-split"></div>
       <div class="card">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-          <div class="card-title" style="margin:0;flex:1;">Prochains événements</div>
-        </div>
-        <div id="events-list">
-          <div class="empty-state">Sélectionnez une salle</div>
-        </div>
+        <div class="card-title">Prochains événements</div>
+        <div id="events-list-split"><div class="empty-state">Chargement…</div></div>
       </div>
-
     </div>
+
+    <!-- Layout pleine largeur — seulement embed -->
+    <div id="layout-embed-only" style="display:none;">
+      <div class="calendar-wrap" id="calendar-wrap-embed"></div>
+    </div>
+
+    <!-- Layout pleine largeur — seulement ICS -->
+    <div id="layout-ics-only" style="display:none;">
+      <div class="card">
+        <div class="card-title" id="ics-only-title">Prochains événements</div>
+        <div id="events-list-ics" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;margin-top:4px;"></div>
+      </div>
+    </div>
+
   </div>
 
 </div>
@@ -192,55 +193,55 @@ function switchRoom(id) {
   activeRoom = allRooms.find(r => r.id === id);
   if (!activeRoom) return;
 
-  // Mise à jour des onglets
+  // Onglet actif
   document.querySelectorAll('.room-tab').forEach(btn => btn.classList.remove('active'));
   const tab = document.getElementById(`tab-${id}`);
   if (tab) tab.classList.add('active');
 
-  // Reset statut ICS
   hideICSStatus();
   document.getElementById('btn-refresh').style.display = 'none';
 
-  // Embed iframe
-  const wrap = document.getElementById('calendar-wrap');
-  if (activeRoom.calendar_embed_url) {
-    wrap.innerHTML = `<iframe src="${escHtml(activeRoom.calendar_embed_url)}" frameborder="0" scrolling="no" allowfullscreen></iframe>`;
-  } else {
-    wrap.innerHTML = `<div class="setup-guide" id="no-embed-guide">
-      <div style="font-size:36px;margin-bottom:10px;">🗓</div>
-      <h2>Iframe non configurée</h2>
-      <p style="font-size:12px;">Ajoutez une <strong>URL iframe</strong> pour <em>${escHtml(activeRoom.name)}</em> dans Admin → Salles.</p>
-    </div>`;
-  }
+  const hasEmbed = !!activeRoom.calendar_embed_url;
+  const hasICS   = !!activeRoom.calendar_ics_url;
 
-  // ICS
-  if (activeRoom.calendar_ics_url) {
+  // Choisir le bon layout
+  document.getElementById('layout-split').style.display     = 'none';
+  document.getElementById('layout-embed-only').style.display = 'none';
+  document.getElementById('layout-ics-only').style.display  = 'none';
+
+  if (hasEmbed && hasICS) {
+    document.getElementById('layout-split').style.display = '';
+    document.getElementById('calendar-wrap-split').innerHTML =
+      `<iframe src="${escHtml(activeRoom.calendar_embed_url)}" frameborder="0" scrolling="no" allowfullscreen></iframe>`;
+    document.getElementById('events-list-split').innerHTML =
+      '<div class="empty-state" style="color:var(--purple);">Chargement…</div>';
     document.getElementById('btn-refresh').style.display = '';
-    document.getElementById('events-list').innerHTML = '<div class="empty-state" style="color:var(--purple);">Chargement…</div>';
     setICSStatus('loading', 'Chargement…');
-    loadICS(activeRoom.calendar_ics_url);
-  } else {
-    document.getElementById('events-list').innerHTML = `<div class="empty-state">
-      <div style="font-size:24px;margin-bottom:8px;">📭</div>
-      URL ICS non configurée pour cette salle.<br>
-      <span style="font-size:11px;">Admin → Salles → ${escHtml(activeRoom.name)}</span>
-    </div>`;
+    loadICS(activeRoom.calendar_ics_url, 'events-list-split');
+
+  } else if (hasEmbed) {
+    document.getElementById('layout-embed-only').style.display = '';
+    document.getElementById('calendar-wrap-embed').innerHTML =
+      `<iframe src="${escHtml(activeRoom.calendar_embed_url)}" frameborder="0" scrolling="no" allowfullscreen></iframe>`;
+
+  } else if (hasICS) {
+    document.getElementById('layout-ics-only').style.display = '';
+    document.getElementById('ics-only-title').textContent = `Réservations — ${activeRoom.name}`;
+    document.getElementById('events-list-ics').innerHTML =
+      '<div class="empty-state" style="color:var(--purple);">Chargement…</div>';
+    document.getElementById('btn-refresh').style.display = '';
+    setICSStatus('loading', 'Chargement…');
+    loadICS(activeRoom.calendar_ics_url, 'events-list-ics');
   }
 }
 
 // ── Chargement ICS — 3 tentatives en cascade ─────────────────
-async function loadICS(url) {
+async function loadICS(url, targetId) {
   const proxyUrl = `${ENIGMA_CONFIG.supabaseUrl}/functions/v1/ics-proxy?url=${encodeURIComponent(url)}`;
 
   const attempts = [
-    // 1. Fetch direct — marche avec Google Calendar (CORS autorisé)
     () => fetch(url, { cache: 'no-store' }),
-    // 2. Edge Function Supabase — proxy dans notre propre infra (le plus fiable)
-    () => fetch(proxyUrl, {
-      cache: 'no-store',
-      headers: { 'apikey': ENIGMA_CONFIG.supabaseAnonKey },
-    }),
-    // 3. Proxy public — dernier recours
+    () => fetch(proxyUrl, { cache: 'no-store', headers: { 'apikey': ENIGMA_CONFIG.supabaseAnonKey } }),
     () => fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, { cache: 'no-store' }),
   ];
 
@@ -256,7 +257,7 @@ async function loadICS(url) {
 
   if (!text) {
     setICSStatus('err', 'URL inaccessible');
-    document.getElementById('events-list').innerHTML = `<div class="empty-state" style="color:var(--red);">
+    document.getElementById(targetId).innerHTML = `<div class="empty-state" style="color:var(--red);">
       Impossible de charger le calendrier.<br>
       <span style="font-size:11px;">Vérifiez que l'URL ICS est correcte et que la fonction <code>ics-proxy</code> est déployée.</span>
     </div>`;
@@ -264,15 +265,16 @@ async function loadICS(url) {
   }
 
   const events = parseICS(text);
-  renderEvents(events);
+  renderEvents(events, targetId);
   setICSStatus('ok', `${events.length} événement(s)`);
 }
 
 function refreshICS() {
   if (!activeRoom?.calendar_ics_url) return;
-  document.getElementById('events-list').innerHTML = '<div class="empty-state" style="color:var(--purple);">Chargement…</div>';
+  const targetId = activeRoom.calendar_embed_url ? 'events-list-split' : 'events-list-ics';
+  document.getElementById(targetId).innerHTML = '<div class="empty-state" style="color:var(--purple);">Chargement…</div>';
   setICSStatus('loading', 'Chargement…');
-  loadICS(activeRoom.calendar_ics_url);
+  loadICS(activeRoom.calendar_ics_url, targetId);
 }
 
 // ── Statut ICS ───────────────────────────────────────────────
@@ -288,12 +290,13 @@ function hideICSStatus() {
 }
 
 // ── Rendu des événements ─────────────────────────────────────
-function renderEvents(events) {
+function renderEvents(events, targetId) {
   const today = new Date(); today.setHours(0,0,0,0);
   const upcoming = events.filter(e => e.start && e.start >= today);
 
+  const el = document.getElementById(targetId);
   if (!upcoming.length) {
-    document.getElementById('events-list').innerHTML = '<div class="empty-state">Aucun événement à venir</div>';
+    el.innerHTML = '<div class="empty-state">Aucun événement à venir</div>';
     return;
   }
 
@@ -302,7 +305,7 @@ function renderEvents(events) {
     return d.getDate()===t.getDate() && d.getMonth()===t.getMonth() && d.getFullYear()===t.getFullYear();
   };
 
-  document.getElementById('events-list').innerHTML = upcoming.slice(0, 25).map(ev => {
+  el.innerHTML = upcoming.slice(0, 50).map(ev => {
     const cls     = isToday(ev.start) ? 'today' : '';
     const dateStr = formatEventDate(ev.start, ev.end, ev.allDay);
     return `<div class="event-card ${cls}">
