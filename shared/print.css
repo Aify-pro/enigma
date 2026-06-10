@@ -1,3 +1,9 @@
+/* Cacher les zones d'impression en mode écran */
+#print-ticket,
+#print-report {
+  display: none;
+}
+
 /* ── Thermal print styles (80mm paper) ────────────────────── */
 @media print {
   @page {
