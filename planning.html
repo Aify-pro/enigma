@@ -228,30 +228,39 @@ function switchRoom(id) {
   }
 }
 
-// ── Chargement ICS (avec fallback CORS proxy) ────────────────
+// ── Chargement ICS — 3 tentatives en cascade ─────────────────
 async function loadICS(url) {
-  let text;
+  const proxyUrl = `${ENIGMA_CONFIG.supabaseUrl}/functions/v1/ics-proxy?url=${encodeURIComponent(url)}`;
 
-  // 1ère tentative : fetch direct (fonctionne avec Google Calendar)
-  try {
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    text = await res.text();
-  } catch(e1) {
-    // 2ème tentative : via proxy CORS (pour les sites sans en-têtes CORS)
+  const attempts = [
+    // 1. Fetch direct — marche avec Google Calendar (CORS autorisé)
+    () => fetch(url, { cache: 'no-store' }),
+    // 2. Edge Function Supabase — proxy dans notre propre infra (le plus fiable)
+    () => fetch(proxyUrl, {
+      cache: 'no-store',
+      headers: { 'apikey': ENIGMA_CONFIG.supabaseAnonKey },
+    }),
+    // 3. Proxy public — dernier recours
+    () => fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, { cache: 'no-store' }),
+  ];
+
+  let text = null;
+  for (const attempt of attempts) {
     try {
-      const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-      const res2  = await fetch(proxy, { cache: 'no-store' });
-      if (!res2.ok) throw new Error(`HTTP ${res2.status}`);
-      text = await res2.text();
-    } catch(e2) {
-      setICSStatus('err', 'URL inaccessible');
-      document.getElementById('events-list').innerHTML = `<div class="empty-state" style="color:var(--red);">
-        Impossible de charger le calendrier.<br>
-        <span style="font-size:11px;">Vérifiez que l'URL ICS est correcte et publique.</span>
-      </div>`;
-      return;
-    }
+      const res = await attempt();
+      if (!res.ok) continue;
+      const t = await res.text();
+      if (t.includes('BEGIN:VCALENDAR')) { text = t; break; }
+    } catch(_) { /* tenter la suivante */ }
+  }
+
+  if (!text) {
+    setICSStatus('err', 'URL inaccessible');
+    document.getElementById('events-list').innerHTML = `<div class="empty-state" style="color:var(--red);">
+      Impossible de charger le calendrier.<br>
+      <span style="font-size:11px;">Vérifiez que l'URL ICS est correcte et que la fonction <code>ics-proxy</code> est déployée.</span>
+    </div>`;
+    return;
   }
 
   const events = parseICS(text);
