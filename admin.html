@@ -135,6 +135,15 @@
           <label>Ordre d'affichage</label>
           <input type="number" id="room-order" value="0" min="0" />
         </div>
+        <hr style="border:none;border-top:1px solid var(--border);margin:8px 0;">
+        <div class="field">
+          <label>🗓 Calendrier — URL iframe (Google Calendar)</label>
+          <input type="text" id="room-cal-embed" placeholder="https://calendar.google.com/calendar/embed?src=…" />
+        </div>
+        <div class="field">
+          <label>🗓 Calendrier — URL ICS (format iCal)</label>
+          <input type="text" id="room-cal-ics" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" />
+        </div>
         <div style="display:flex;gap:8px;margin-top:4px;">
           <button class="btn btn-primary" onclick="saveRoom()" style="flex:1" id="room-save-btn">Enregistrer</button>
           <button class="btn btn-ghost" onclick="cancelRoomEdit()" id="room-cancel-btn" style="display:none;">Annuler</button>
@@ -491,7 +500,7 @@ function renderRoomsList() {
       <div class="room-dot" style="background:${r.color||'#7c6af7'}"></div>
       <div class="room-info">
         <div class="room-name">${escHtml(r.name)}</div>
-        <div class="room-meta">${r.duration_minutes}min · ${r.min_players}–${r.max_players} joueurs · extra: ${fmt(r.extra_player_price_xof)}/j</div>
+        <div class="room-meta">${r.duration_minutes}min · ${r.min_players}–${r.max_players} joueurs · extra: ${fmt(r.extra_player_price_xof)}/j${r.has_extreme_mode?' · ⚡ Extrême':''}${r.calendar_ics_url||r.calendar_embed_url?' · 🗓':''}</div>
       </div>
       <div style="display:flex;gap:4px;">
         <button class="btn btn-ghost btn-sm" onclick="editRoom('${r.id}')">✏️</button>
@@ -544,8 +553,10 @@ function editRoom(id) {
   document.getElementById('room-extreme').checked = !!r.has_extreme_mode;
   document.getElementById('room-extreme-price').value = r.extreme_mode_price_xof || 10000;
   document.getElementById('extreme-price-wrap').style.display = r.has_extreme_mode ? '' : 'none';
-  document.getElementById('room-color').value    = r.color || '#7c6af7';
+  document.getElementById('room-color').value     = r.color || '#7c6af7';
   document.getElementById('room-order').value    = r.sort_order || 0;
+  document.getElementById('room-cal-embed').value = r.calendar_embed_url || '';
+  document.getElementById('room-cal-ics').value   = r.calendar_ics_url   || '';
   document.getElementById('room-form-title').textContent = 'Modifier la salle';
   document.getElementById('room-save-btn').textContent   = 'Mettre à jour';
   document.getElementById('room-cancel-btn').style.display = '';
@@ -567,8 +578,10 @@ function cancelRoomEdit() {
   document.getElementById('room-extreme').checked = false;
   document.getElementById('room-extreme-price').value = '10000';
   document.getElementById('extreme-price-wrap').style.display = 'none';
-  document.getElementById('room-color').value = '#7c6af7';
-  document.getElementById('room-order').value = '0';
+  document.getElementById('room-color').value     = '#7c6af7';
+  document.getElementById('room-order').value    = '0';
+  document.getElementById('room-cal-embed').value = '';
+  document.getElementById('room-cal-ics').value   = '';
   document.getElementById('room-form-title').textContent = 'Nouvelle salle';
   document.getElementById('room-save-btn').textContent   = 'Enregistrer';
   document.getElementById('room-cancel-btn').style.display = 'none';
@@ -586,8 +599,10 @@ async function saveRoom() {
     extra_player_price_xof: parseInt(document.getElementById('room-extra').value) || 0,
     has_extreme_mode:       document.getElementById('room-extreme').checked,
     extreme_mode_price_xof: parseInt(document.getElementById('room-extreme-price').value) || 10000,
-    color:                document.getElementById('room-color').value,
-    sort_order:           parseInt(document.getElementById('room-order').value) || 0,
+    color:                  document.getElementById('room-color').value,
+    sort_order:             parseInt(document.getElementById('room-order').value) || 0,
+    calendar_embed_url:     document.getElementById('room-cal-embed').value.trim() || null,
+    calendar_ics_url:       document.getElementById('room-cal-ics').value.trim()   || null,
   };
   let error;
   if (editingRoomId) {

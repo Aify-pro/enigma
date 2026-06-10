@@ -158,8 +158,8 @@
       <hr class="sep">
       <div class="field-row">
         <div class="field">
-          <label>Opérateur *</label>
-          <input type="text" id="inp-operator" placeholder="Votre prénom" />
+          <label>Nom du client</label>
+          <input type="text" id="inp-client" placeholder="Prénom Nom du réservant" />
         </div>
         <div class="field">
           <label>Notes</label>
@@ -631,7 +631,8 @@ async function saveSale(doPrint) {
     const payRef     = document.getElementById('pay-ref').value.trim();
     const ticketType = document.getElementById('sel-type').value;
     const sessionDate= document.getElementById('inp-date').value;
-    const op         = document.getElementById('inp-operator').value.trim();
+    const op         = currentUser?.display_name || currentUser?.email || 'Système';
+    const clientName = document.getElementById('inp-client').value.trim();
 
     const ticketPayload = {
       ticket_number:       ticketNum,
@@ -651,6 +652,7 @@ async function saveSale(doPrint) {
       advance_id:          advanceSelected?.id || null,
       voucher_id:          voucherData ? voucherData.id : null,
       ticket_type:         ticketType,
+      client_name:         clientName || null,
       operator_name:       op,
       notes:               document.getElementById('inp-notes').value.trim(),
       status:              'confirmed',
@@ -715,8 +717,7 @@ function validate() {
   } else {
     if (!cart.length) return toast('Ajouter au moins un article','err'),false;
   }
-  if (!document.getElementById('inp-date').value)               return toast('Choisir une date','err'),false;
-  if (!document.getElementById('inp-operator').value.trim())    return toast("Nom de l'opérateur requis",'err'),false;
+  if (!document.getElementById('inp-date').value) return toast('Choisir une date','err'),false;
   const s = window._sale;
   if (!s || s.total <= 0) return toast('Montant total invalide','err'),false;
   const paid = (parseInt(document.getElementById('pay-cash').value)||0)
@@ -763,7 +764,8 @@ function buildTicketHTML(ticket, items) {
       ${ticket.payment_advance_xof>0?`<div class="pay-row"><span>Avance</span><span>${fmt(ticket.payment_advance_xof)}</span></div>`:''}
     </div>
     <hr class="ticket-sep">
-    <div class="ticket-row"><span class="label">Opérateur</span><span class="value">${escHtml(ticket.operator_name)}</span></div>
+    ${ticket.client_name?`<div class="ticket-row"><span class="label">Client</span><span class="value">${escHtml(ticket.client_name)}</span></div>`:''}
+    <div class="ticket-row"><span class="label">Émis par</span><span class="value">${escHtml(ticket.operator_name)}</span></div>
     <div class="ticket-row"><span class="label">Émis le</span><span class="value">${new Date().toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</span></div>
     <div class="ticket-footer"><div class="thanks">Merci et bonne aventure !</div>${ticket.notes?`<div style="margin-top:1mm;font-style:italic;">${escHtml(ticket.notes)}</div>`:''}</div>`;
 }
@@ -839,7 +841,7 @@ function resetForm() {
   document.getElementById('sel-slot').innerHTML='<option value="">— Choisir —</option>';
   document.getElementById('inp-date').value=today();
   document.getElementById('inp-players').value='2';
-  document.getElementById('inp-operator').value='';
+  document.getElementById('inp-client').value='';
   document.getElementById('inp-notes').value='';
   document.getElementById('inp-discount').value='0';
   document.getElementById('inp-voucher').value='';

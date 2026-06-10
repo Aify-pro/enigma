@@ -15,12 +15,13 @@ async function requireAuth() {
     throw new Error('unauthenticated');
   }
   currentUser = {
-    email: session.user.email,
-    role:  (session.user.user_metadata?.role || 'staff').toLowerCase(),
+    email:        session.user.email,
+    role:         (session.user.user_metadata?.role || 'staff').toLowerCase(),
+    display_name: session.user.user_metadata?.display_name || session.user.email.split('@')[0],
   };
-  // Afficher l'email dans la nav
+  // Afficher le nom dans la nav
   const navUser = document.getElementById('nav-user');
-  if (navUser) navUser.textContent = currentUser.email;
+  if (navUser) navUser.textContent = currentUser.display_name;
   // Afficher Rapprochements et Admin uniquement pour les admins
   const rapLink   = document.getElementById('nav-rapprochements');
   const adminLink = document.getElementById('nav-admin');

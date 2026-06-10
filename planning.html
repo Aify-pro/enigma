@@ -6,6 +6,22 @@
   <title>Planning — Enigma</title>
   <link rel="stylesheet" href="shared/style.css">
   <style>
+    /* ── Onglets salles ────────────────────────────────────── */
+    .room-tabs {
+      display: flex; gap: 4px; flex-wrap: wrap;
+      margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 0;
+    }
+    .room-tab {
+      display: flex; align-items: center; gap: 6px;
+      padding: 9px 16px; border-radius: 6px 6px 0 0; font-size: 13px; font-weight: 600;
+      cursor: pointer; background: transparent; border: none; color: var(--text2);
+      border-bottom: 2px solid transparent; transition: color .15s; white-space: nowrap;
+    }
+    .room-tab .tab-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .room-tab.active { color: var(--purple); border-bottom-color: var(--purple); }
+    .room-tab:hover:not(.active) { color: var(--text); }
+
+    /* ── Layout ────────────────────────────────────────────── */
     .planning-layout {
       display: grid;
       grid-template-columns: 1fr 320px;
@@ -29,17 +45,17 @@
       display: block;
     }
 
-    /* ── Setup guide ───────────────────────────────────────── */
+    /* ── Messages ──────────────────────────────────────────── */
     .setup-guide {
       padding: 32px;
       text-align: center;
       color: var(--text2);
     }
     .setup-guide h2 { font-size: 16px; font-weight: 700; margin-bottom: 12px; color: var(--text); }
-    .setup-guide ol { text-align: left; max-width: 480px; margin: 0 auto; line-height: 2; font-size: 13px; }
-    .setup-guide code { background: var(--bg3); padding: 2px 6px; border-radius: 4px; font-size: 12px; color: var(--cyan); }
+    .setup-guide ol { text-align: left; max-width: 480px; margin: 0 auto; line-height: 2.2; font-size: 13px; }
+    .setup-guide code { background: var(--bg3); padding: 2px 7px; border-radius: 4px; font-size: 12px; color: var(--cyan); }
 
-    /* ── Prochains événements ──────────────────────────────── */
+    /* ── Événements ────────────────────────────────────────── */
     .event-card {
       padding: 12px 14px;
       background: var(--bg3);
@@ -47,27 +63,22 @@
       border-left: 3px solid var(--purple);
       border-radius: 8px;
       margin-bottom: 8px;
-      cursor: default;
       transition: border-color .15s;
     }
     .event-card:hover { border-left-color: var(--cyan); }
-    .event-card.today  { border-left-color: var(--green); }
-    .event-card.past   { opacity: .5; }
-    .event-title  { font-weight: 600; font-size: 13px; margin-bottom: 3px; }
-    .event-date   { font-size: 11px; color: var(--cyan); font-weight: 600; }
-    .event-loc    { font-size: 11px; color: var(--text3); margin-top: 2px; }
-    .event-desc   { font-size: 11px; color: var(--text2); margin-top: 4px; line-height: 1.5; }
+    .event-card.today { border-left-color: var(--green); }
+    .event-card.past  { opacity: .5; }
+    .event-title { font-weight: 600; font-size: 13px; margin-bottom: 3px; }
+    .event-date  { font-size: 11px; color: var(--cyan); font-weight: 600; }
+    .event-loc   { font-size: 11px; color: var(--text3); margin-top: 2px; }
+    .event-desc  { font-size: 11px; color: var(--text2); margin-top: 4px; line-height: 1.5; }
 
-    .empty-state  { text-align: center; padding: 32px; color: var(--text3); font-size: 13px; }
+    .empty-state { text-align: center; padding: 28px; color: var(--text3); font-size: 13px; }
 
-    /* ── Barre de contrôle ─────────────────────────────────── */
-    .ctrl-bar {
-      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-      margin-bottom: 14px;
-    }
     .ics-status { font-size: 11px; padding: 3px 10px; border-radius: 20px; }
     .ics-ok  { background: rgba(74,222,128,.12); color: var(--green); }
     .ics-err { background: rgba(248,113,113,.12); color: var(--red); }
+    .ics-loading { background: rgba(124,106,247,.1); color: var(--purple); }
   </style>
 </head>
 <body>
@@ -84,92 +95,180 @@
 <div id="toast-container"></div>
 
 <div class="page">
-  <div class="ctrl-bar">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
     <div class="page-title" style="margin:0;">📅 Planning</div>
     <span id="ics-status" style="display:none;"></span>
-    <button class="btn btn-ghost btn-sm" onclick="refreshICS()" id="btn-refresh" style="display:none;">↻ Rafraîchir</button>
+    <button class="btn btn-ghost btn-sm" id="btn-refresh" style="display:none;" onclick="refreshICS()">↻ Rafraîchir</button>
   </div>
 
-  <div class="planning-layout">
+  <!-- Onglets par salle -->
+  <div class="room-tabs" id="room-tabs" style="display:none;"></div>
 
-    <!-- ── Calendrier principal ────────────────────────────── -->
-    <div class="calendar-wrap" id="calendar-wrap">
-      <div class="setup-guide" id="setup-guide">
+  <!-- Aucun calendrier configuré -->
+  <div id="no-calendars" style="display:none;">
+    <div class="card">
+      <div class="setup-guide">
         <div style="font-size:48px;margin-bottom:12px;">📅</div>
-        <h2>Calendrier non configuré</h2>
-        <p style="font-size:13px;margin-bottom:20px;">Ajoutez vos URLs dans <code>shared/config.js</code> :</p>
+        <h2>Aucun calendrier configuré</h2>
+        <p style="font-size:13px;margin-bottom:20px;color:var(--text2);">
+          Configurez un calendrier pour chaque salle directement dans <strong>Admin → Salles</strong>.
+        </p>
         <ol>
-          <li>Ouvrez Google Calendar → <strong>Paramètres</strong></li>
-          <li>Sélectionnez votre agenda → <strong>Intégrer l'agenda</strong></li>
-          <li>Copiez l'URL de l'<code>&lt;iframe src="…"&gt;</code> → collez dans <code>calendarEmbedUrl</code></li>
-          <li>Copiez <em>l'adresse publique au format iCal</em> → collez dans <code>calendarIcsUrl</code></li>
+          <li>Ouvrez <strong>Google Calendar</strong> → Paramètres de l'agenda</li>
+          <li>Section <strong>Intégrer l'agenda</strong></li>
+          <li>Copiez l'URL de l'<code>&lt;iframe src="…"&gt;</code> → collez dans <em>URL iframe</em> de la salle</li>
+          <li>Copiez <em>l'adresse publique au format iCal</em> → collez dans <em>URL ICS</em> de la salle</li>
         </ol>
       </div>
     </div>
-
-    <!-- ── Prochains événements ────────────────────────────── -->
-    <div class="card">
-      <div class="card-title">Prochains événements</div>
-      <div id="events-list">
-        <div class="empty-state">Chargement…</div>
-      </div>
-    </div>
-
   </div>
+
+  <!-- Vue d'une salle -->
+  <div id="room-view" style="display:none;">
+    <div class="planning-layout">
+
+      <!-- Calendrier embed (gauche) -->
+      <div class="calendar-wrap" id="calendar-wrap">
+        <div class="setup-guide" id="no-embed-guide">
+          <div style="font-size:36px;margin-bottom:10px;">🗓</div>
+          <h2>Iframe non configurée</h2>
+          <p style="font-size:12px;">Ajoutez une <strong>URL iframe</strong> pour cette salle dans Admin → Salles.</p>
+        </div>
+      </div>
+
+      <!-- Événements ICS (droite) -->
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+          <div class="card-title" style="margin:0;flex:1;">Prochains événements</div>
+        </div>
+        <div id="events-list">
+          <div class="empty-state">Sélectionnez une salle</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="shared/config.js"></script>
 <script src="shared/auth.js"></script>
 <script>
+let allRooms    = [];
+let activeRoom  = null;
+
 window.addEventListener('load', async () => {
   try { await requireAuth(); } catch(e) { return; }
+  const { data, error } = await sb.from('rooms')
+    .select('id,name,color,calendar_embed_url,calendar_ics_url')
+    .eq('is_active', true)
+    .order('sort_order');
+  if (error) { toast('Erreur chargement salles', 'err'); return; }
+  allRooms = (data || []).filter(r => r.calendar_embed_url || r.calendar_ics_url);
 
-  // ── Embed iframe ────────────────────────────────────────────
-  if (ENIGMA_CONFIG.calendarEmbedUrl) {
-    const wrap = document.getElementById('calendar-wrap');
-    wrap.innerHTML = `<iframe src="${escHtml(ENIGMA_CONFIG.calendarEmbedUrl)}" frameborder="0" scrolling="no" allowfullscreen></iframe>`;
+  if (!allRooms.length) {
+    document.getElementById('no-calendars').style.display = '';
+    return;
   }
 
-  // ── ICS feed ────────────────────────────────────────────────
-  if (ENIGMA_CONFIG.calendarIcsUrl) {
-    document.getElementById('btn-refresh').style.display = '';
-    await loadICS();
-  } else {
-    document.getElementById('events-list').innerHTML = '<div class="empty-state">Configurez <code>calendarIcsUrl</code> dans config.js pour voir les événements.</div>';
-  }
+  renderTabs();
+  document.getElementById('room-tabs').style.display  = '';
+  document.getElementById('room-view').style.display  = '';
+  switchRoom(allRooms[0].id);
 });
 
-async function loadICS() {
-  const url = ENIGMA_CONFIG.calendarIcsUrl;
-  if (!url) return;
-  try {
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
-    const events = parseICS(text);
-    renderEvents(events);
-    setICSStatus('ok', `${events.length} événement(s) chargé(s)`);
-  } catch(e) {
-    setICSStatus('err', 'Impossible de charger le calendrier ICS (CORS ou URL invalide)');
-    document.getElementById('events-list').innerHTML = `<div class="empty-state" style="color:var(--red);">Erreur : ${escHtml(e.message)}<br><br>Vérifiez que l'URL ICS est accessible publiquement.</div>`;
+// ── Onglets ──────────────────────────────────────────────────
+function renderTabs() {
+  const el = document.getElementById('room-tabs');
+  el.innerHTML = allRooms.map(r => `
+    <button class="room-tab" id="tab-${r.id}" onclick="switchRoom('${r.id}')">
+      <span class="tab-dot" style="background:${r.color||'#7c6af7'};"></span>
+      ${escHtml(r.name)}
+    </button>`).join('');
+}
+
+function switchRoom(id) {
+  activeRoom = allRooms.find(r => r.id === id);
+  if (!activeRoom) return;
+
+  // Mise à jour des onglets
+  document.querySelectorAll('.room-tab').forEach(btn => btn.classList.remove('active'));
+  const tab = document.getElementById(`tab-${id}`);
+  if (tab) tab.classList.add('active');
+
+  // Reset statut ICS
+  hideICSStatus();
+  document.getElementById('btn-refresh').style.display = 'none';
+
+  // Embed iframe
+  const wrap = document.getElementById('calendar-wrap');
+  if (activeRoom.calendar_embed_url) {
+    wrap.innerHTML = `<iframe src="${escHtml(activeRoom.calendar_embed_url)}" frameborder="0" scrolling="no" allowfullscreen></iframe>`;
+  } else {
+    wrap.innerHTML = `<div class="setup-guide" id="no-embed-guide">
+      <div style="font-size:36px;margin-bottom:10px;">🗓</div>
+      <h2>Iframe non configurée</h2>
+      <p style="font-size:12px;">Ajoutez une <strong>URL iframe</strong> pour <em>${escHtml(activeRoom.name)}</em> dans Admin → Salles.</p>
+    </div>`;
+  }
+
+  // ICS
+  if (activeRoom.calendar_ics_url) {
+    document.getElementById('btn-refresh').style.display = '';
+    document.getElementById('events-list').innerHTML = '<div class="empty-state" style="color:var(--purple);">Chargement…</div>';
+    setICSStatus('loading', 'Chargement…');
+    loadICS(activeRoom.calendar_ics_url);
+  } else {
+    document.getElementById('events-list').innerHTML = `<div class="empty-state">
+      <div style="font-size:24px;margin-bottom:8px;">📭</div>
+      URL ICS non configurée pour cette salle.<br>
+      <span style="font-size:11px;">Admin → Salles → ${escHtml(activeRoom.name)}</span>
+    </div>`;
   }
 }
 
-async function refreshICS() { await loadICS(); }
+// ── Chargement ICS ───────────────────────────────────────────
+async function loadICS(url) {
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text   = await res.text();
+    const events = parseICS(text);
+    renderEvents(events);
+    setICSStatus('ok', `${events.length} événement(s)`);
+  } catch(e) {
+    setICSStatus('err', 'Impossible de charger (CORS ou URL invalide)');
+    document.getElementById('events-list').innerHTML = `<div class="empty-state" style="color:var(--red);">
+      Erreur : ${escHtml(e.message)}<br>
+      <span style="font-size:11px;">Vérifiez que l'URL ICS est publique.</span>
+    </div>`;
+  }
+}
 
+function refreshICS() {
+  if (!activeRoom?.calendar_ics_url) return;
+  document.getElementById('events-list').innerHTML = '<div class="empty-state" style="color:var(--purple);">Chargement…</div>';
+  setICSStatus('loading', 'Chargement…');
+  loadICS(activeRoom.calendar_ics_url);
+}
+
+// ── Statut ICS ───────────────────────────────────────────────
 function setICSStatus(type, msg) {
   const el = document.getElementById('ics-status');
   el.style.display = '';
   el.className = `ics-status ics-${type}`;
   el.textContent = msg;
 }
+function hideICSStatus() {
+  const el = document.getElementById('ics-status');
+  el.style.display = 'none';
+}
 
-// ── Rendu des événements ────────────────────────────────────
+// ── Rendu des événements ─────────────────────────────────────
 function renderEvents(events) {
-  const now   = new Date();
-  const soon  = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 jours
-  const upcoming = events.filter(e => e.start && e.start >= new Date(now.setHours(0,0,0,0)));
+  const today = new Date(); today.setHours(0,0,0,0);
+  const upcoming = events.filter(e => e.start && e.start >= today);
 
   if (!upcoming.length) {
     document.getElementById('events-list').innerHTML = '<div class="empty-state">Aucun événement à venir</div>';
@@ -177,24 +276,25 @@ function renderEvents(events) {
   }
 
   const isToday = d => {
-    const t = new Date(); return d.getDate()===t.getDate() && d.getMonth()===t.getMonth() && d.getFullYear()===t.getFullYear();
+    const t = new Date();
+    return d.getDate()===t.getDate() && d.getMonth()===t.getMonth() && d.getFullYear()===t.getFullYear();
   };
 
-  document.getElementById('events-list').innerHTML = upcoming.slice(0, 20).map(ev => {
-    const cls = isToday(ev.start) ? 'today' : '';
+  document.getElementById('events-list').innerHTML = upcoming.slice(0, 25).map(ev => {
+    const cls     = isToday(ev.start) ? 'today' : '';
     const dateStr = formatEventDate(ev.start, ev.end, ev.allDay);
     return `<div class="event-card ${cls}">
       <div class="event-title">${escHtml(ev.title)}</div>
       <div class="event-date">${dateStr}</div>
-      ${ev.location ? `<div class="event-loc">📍 ${escHtml(ev.location)}</div>` : ''}
-      ${ev.description ? `<div class="event-desc">${escHtml(ev.description.slice(0,120))}${ev.description.length>120?'…':''}</div>` : ''}
+      ${ev.location    ? `<div class="event-loc">📍 ${escHtml(ev.location)}</div>` : ''}
+      ${ev.description ? `<div class="event-desc">${escHtml(ev.description.slice(0,130))}${ev.description.length>130?'…':''}</div>` : ''}
     </div>`;
   }).join('');
 }
 
 function formatEventDate(start, end, allDay) {
   if (!start) return '';
-  const opts = { weekday: 'short', day: '2-digit', month: 'short' };
+  const opts     = { weekday: 'short', day: '2-digit', month: 'short' };
   const timeOpts = { hour: '2-digit', minute: '2-digit' };
   if (allDay) return start.toLocaleDateString('fr-FR', opts);
   let str = start.toLocaleDateString('fr-FR', opts) + ' ' + start.toLocaleTimeString('fr-FR', timeOpts);
@@ -202,12 +302,10 @@ function formatEventDate(start, end, allDay) {
   return str;
 }
 
-// ── Parser ICS ──────────────────────────────────────────────
+// ── Parser ICS ───────────────────────────────────────────────
 function parseICS(text) {
-  // Dépliage des lignes (continuation avec espace/tab)
-  const raw = text.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '');
+  const raw   = text.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '');
   const lines = raw.split(/\r\n|\n|\r/);
-
   const events = [];
   let cur = null;
 
@@ -224,8 +322,7 @@ function parseICS(text) {
       const key    = rawKey.split(';')[0].toUpperCase();
       const params = rawKey.slice(key.length);
       const val    = line.slice(ci + 1)
-        .replace(/\\n/g, '\n').replace(/\\,/g, ',')
-        .replace(/\\;/g, ';').replace(/\\\\/g, '\\').trim();
+        .replace(/\\n/g,'\n').replace(/\\,/g,',').replace(/\\;/g,';').replace(/\\\\/g,'\\').trim();
 
       if (key === 'DTSTART' || key === 'DTEND') {
         const allDay = !val.includes('T') && !params.includes('VALUE=DATE-TIME');
@@ -244,7 +341,7 @@ function parseICS(text) {
 function parseICSDate(val) {
   if (!val) return null;
   const isUTC = val.endsWith('Z');
-  const clean  = val.replace('Z', '');
+  const clean = val.replace('Z', '');
   if (clean.includes('T')) {
     const d = clean.slice(0,8), t = clean.slice(9) || clean.slice(8);
     const iso = `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}T${t.slice(0,2)}:${t.slice(2,4)}:${t.slice(4,6)||'00'}${isUTC?'Z':''}`;
@@ -253,7 +350,7 @@ function parseICSDate(val) {
   return new Date(`${clean.slice(0,4)}-${clean.slice(4,6)}-${clean.slice(6,8)}`);
 }
 
-// ── Helpers ─────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────
 function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function toast(msg,type='info'){const c=document.getElementById('toast-container');const t=document.createElement('div');t.className=`toast toast-${type==='ok'?'ok':type==='err'?'err':'info'}`;t.textContent=msg;c.appendChild(t);setTimeout(()=>t.remove(),3500);}
 </script>
