@@ -118,6 +118,15 @@
         </div>
         <div class="field"><label>Prix extra/joueur (FCFA)</label><input type="number" id="room-extra" value="0" min="0" /></div>
         <div class="field">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+            <input type="checkbox" id="room-extreme" onchange="document.getElementById('extreme-price-wrap').style.display=this.checked?'':'none'" style="width:16px;height:16px;cursor:pointer;" />
+            <span>Mode extrême disponible</span>
+          </label>
+        </div>
+        <div id="extreme-price-wrap" style="display:none;">
+          <div class="field"><label>Prix mode extrême (FCFA)</label><input type="number" id="room-extreme-price" value="10000" min="0" /></div>
+        </div>
+        <div class="field">
           <label>Couleur</label>
           <div class="color-swatches" id="color-swatches"></div>
           <input type="color" id="room-color" value="#7c6af7" style="margin-top:8px;width:50px;height:30px;padding:2px;cursor:pointer;" />
@@ -532,6 +541,9 @@ function editRoom(id) {
   document.getElementById('room-min').value      = r.min_players;
   document.getElementById('room-max').value      = r.max_players;
   document.getElementById('room-extra').value    = r.extra_player_price_xof;
+  document.getElementById('room-extreme').checked = !!r.has_extreme_mode;
+  document.getElementById('room-extreme-price').value = r.extreme_mode_price_xof || 10000;
+  document.getElementById('extreme-price-wrap').style.display = r.has_extreme_mode ? '' : 'none';
   document.getElementById('room-color').value    = r.color || '#7c6af7';
   document.getElementById('room-order').value    = r.sort_order || 0;
   document.getElementById('room-form-title').textContent = 'Modifier la salle';
@@ -552,6 +564,9 @@ function cancelRoomEdit() {
   document.getElementById('room-min').value  = '2';
   document.getElementById('room-max').value  = '6';
   document.getElementById('room-extra').value = '0';
+  document.getElementById('room-extreme').checked = false;
+  document.getElementById('room-extreme-price').value = '10000';
+  document.getElementById('extreme-price-wrap').style.display = 'none';
   document.getElementById('room-color').value = '#7c6af7';
   document.getElementById('room-order').value = '0';
   document.getElementById('room-form-title').textContent = 'Nouvelle salle';
@@ -569,6 +584,8 @@ async function saveRoom() {
     min_players:          parseInt(document.getElementById('room-min').value)   || 2,
     max_players:          parseInt(document.getElementById('room-max').value)   || 6,
     extra_player_price_xof: parseInt(document.getElementById('room-extra').value) || 0,
+    has_extreme_mode:       document.getElementById('room-extreme').checked,
+    extreme_mode_price_xof: parseInt(document.getElementById('room-extreme-price').value) || 10000,
     color:                document.getElementById('room-color').value,
     sort_order:           parseInt(document.getElementById('room-order').value) || 0,
   };

@@ -10,7 +10,6 @@
     .layout { display: grid; grid-template-columns: 1fr 380px; gap: 16px; align-items: start; }
     @media (max-width: 960px) { .layout { grid-template-columns: 1fr; } }
 
-    /* Résumé du jour */
     .day-bar {
       display: flex; align-items: center; flex-wrap: wrap; gap: 20px;
       background: var(--bg2); border: 1px solid var(--border);
@@ -49,6 +48,25 @@
     .voucher-row { display: flex; gap: 6px; }
     .voucher-row input { flex: 1; }
     .info-banner { background: rgba(124,106,247,.1); border: 1px solid rgba(124,106,247,.3); border-radius: 8px; padding: 10px 14px; font-size: 12px; color: var(--purple); margin-bottom: 12px; }
+
+    /* Mode extrême */
+    .btn-extreme { background: rgba(250,204,21,.1); border-color: rgba(250,204,21,.4); color: var(--yellow); }
+    .btn-extreme.active { background: rgba(250,204,21,.25); border-color: var(--yellow); font-weight: 700; box-shadow: 0 0 0 2px rgba(250,204,21,.2); }
+
+    /* Vente sans salle */
+    .btn-article-only.active { background: rgba(124,106,247,.18); border-color: var(--purple); color: var(--purple); font-weight: 700; }
+    #session-section { transition: opacity .2s; }
+    #session-section.faded { opacity: .32; pointer-events: none; user-select: none; }
+
+    /* Avances */
+    .advance-item { display:flex; align-items:center; gap:10px; padding:10px 12px; background:var(--bg3); border:1px solid var(--border); border-radius:8px; margin-bottom:6px; }
+    .advance-item.selected { border-color: var(--green); background: rgba(34,197,94,.07); }
+    .advance-item .ai-info { flex:1; min-width:0; }
+    .advance-item .ai-name { font-weight:600; font-size:13px; }
+    .advance-item .ai-meta { color:var(--text3); font-size:11px; margin-top:2px; }
+    .advance-item .ai-amount { font-weight:700; color:var(--cyan); font-size:14px; white-space:nowrap; margin-right:8px; }
+    .advances-layout { display:grid; grid-template-columns:360px 1fr; gap:16px; align-items:start; }
+    @media(max-width:900px){ .advances-layout{ grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
@@ -73,7 +91,8 @@
 <div class="page">
   <div class="flex-between" style="margin-bottom:12px;">
     <div class="page-title" style="margin:0;">🎫 Caisse — Billetterie</div>
-    <div style="display:flex;gap:8px;">
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button id="btn-article-only" class="btn btn-ghost btn-sm btn-article-only" onclick="toggleArticleOnly()">🛒 Vente sans salle</button>
       <button class="btn btn-ghost btn-sm" onclick="openDailyReport()">🖨️ Rapport du jour</button>
       <button class="btn btn-ghost btn-sm" onclick="resetForm()">↩️ Nouveau ticket</button>
     </div>
@@ -92,15 +111,17 @@
     <div class="db-item"><span class="db-label">Bons cadeaux</span><span class="db-val" id="ds-voucher" style="color:var(--yellow);">—</span></div>
     <div class="db-sep"></div>
     <div class="db-item"><span class="db-label">Articles</span><span class="db-val" id="ds-items" style="color:var(--purple);">—</span></div>
+    <div class="db-sep"></div>
+    <div class="db-item"><span class="db-label">Avances reçues</span><span class="db-val" id="ds-advances" style="color:rgba(250,204,21,.9);">—</span></div>
   </div>
 
   <div class="layout">
     <!-- ── Gauche : session ────────────────────────────────── -->
-    <div class="card">
+    <div class="card" id="session-section">
       <div class="card-title">Détails de la session</div>
       <div class="field-row">
         <div class="field" style="flex:2;">
-          <label>Salle *</label>
+          <label>Salle</label>
           <select id="sel-room" onchange="onRoomChange()">
             <option value="">— Choisir une salle —</option>
           </select>
@@ -119,15 +140,21 @@
       </div>
       <div class="field-row">
         <div class="field">
-          <label>Créneau *</label>
+          <label>Créneau</label>
           <select id="sel-slot"><option value="">— Choisir —</option></select>
         </div>
         <div class="field">
-          <label>Nb joueurs *</label>
+          <label>Nb joueurs</label>
           <input type="number" id="inp-players" min="1" max="30" value="2" oninput="calcPrice()" />
         </div>
       </div>
       <div id="price-info" class="info-banner hidden"></div>
+      <!-- Mode extrême — visible seulement si la salle l'autorise -->
+      <div id="extreme-mode-row" class="hidden" style="margin-top:6px;">
+        <button id="btn-extreme" class="btn btn-ghost btn-sm btn-extreme" onclick="toggleExtremeMode()">
+          ⚡ Mode Extrême — +<span id="extreme-price-label">10 000</span> FCFA
+        </button>
+      </div>
       <hr class="sep">
       <div class="field-row">
         <div class="field">
@@ -167,7 +194,8 @@
             </div>
           </div>
         </div>
-        <div id="voucher-info" class="hidden" style="font-size:12px;color:var(--green);margin-bottom:10px;"></div>
+        <div id="voucher-info"  class="hidden" style="font-size:12px;color:var(--green);margin-bottom:8px;"></div>
+        <div id="advance-pay-info" class="hidden" style="font-size:12px;color:var(--green);margin-bottom:8px;"></div>
 
         <div style="margin-bottom:8px;">
           <label style="display:block;font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Répartition du paiement</label>
@@ -186,9 +214,11 @@
         <div class="total-box">
           <div class="total-line"><span>Session</span><span id="t-session">0 FCFA</span></div>
           <div class="total-line" id="t-extra-row"    style="display:none;"><span>Supplément joueurs</span><span id="t-extra">0 FCFA</span></div>
+          <div class="total-line" id="t-extreme-row"  style="display:none;"><span>⚡ Mode Extrême</span><span id="t-extreme">0 FCFA</span></div>
           <div class="total-line" id="t-items-row"    style="display:none;"><span>Articles</span><span id="t-items">0 FCFA</span></div>
           <div class="total-line" id="t-discount-row" style="display:none;"><span>Remise</span><span id="t-discount" style="color:var(--green);">−0 FCFA</span></div>
           <div class="total-line" id="t-voucher-row"  style="display:none;"><span>Bon cadeau</span><span id="t-voucher" style="color:var(--green);">−0 FCFA</span></div>
+          <div class="total-line" id="t-advance-row"  style="display:none;"><span>✓ Avance client</span><span id="t-advance" style="color:var(--green);">−0 FCFA</span></div>
           <div class="total-line grand"><span>TOTAL</span><span id="t-total">0 FCFA</span></div>
           <div class="total-line" id="t-remain-row" style="margin-top:8px;color:var(--yellow);"><span>Reste à encaisser</span><span id="t-remain">0 FCFA</span></div>
         </div>
@@ -202,6 +232,50 @@
       </div>
     </div>
   </div>
+
+  <!-- ── Gestion des avances clients ───────────────────────── -->
+  <div style="margin-top:24px;">
+    <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:12px;">💰 Avances clients</div>
+    <div class="advances-layout">
+      <!-- Formulaire nouvelle avance -->
+      <div class="card">
+        <div class="card-title">Enregistrer une avance</div>
+        <div class="field-row">
+          <div class="field" style="flex:2;"><label>Nom du client *</label><input type="text" id="adv-name" placeholder="Prénom Nom" /></div>
+          <div class="field"><label>Téléphone</label><input type="text" id="adv-phone" placeholder="+225…" /></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Montant (FCFA) *</label><input type="number" id="adv-amount" min="1" placeholder="0" /></div>
+          <div class="field"><label>Mode de paiement</label>
+            <select id="adv-payment">
+              <option value="especes">Espèces</option>
+              <option value="mobile">Mobile Money</option>
+              <option value="cheque">Chèque</option>
+              <option value="virement">Virement</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Date versement *</label><input type="date" id="adv-date" /></div>
+          <div class="field"><label>Date réservation</label><input type="date" id="adv-resdate" /></div>
+        </div>
+        <div class="field"><label>Notes (salle, créneau…)</label><input type="text" id="adv-notes" placeholder="Ex: Salle Atlas, 18h" /></div>
+        <div class="field"><label>Opérateur *</label><input type="text" id="adv-op" placeholder="Votre prénom" /></div>
+        <button class="btn btn-primary btn-full" onclick="saveAdvance()">+ Enregistrer l'avance</button>
+      </div>
+      <!-- Liste avances en attente -->
+      <div class="card">
+        <div class="flex-between" style="margin-bottom:12px;">
+          <div class="card-title" style="margin:0;">Avances en attente</div>
+          <button class="btn btn-ghost btn-sm" onclick="loadAdvances()">↻ Actualiser</button>
+        </div>
+        <div id="advances-list">
+          <div class="text-muted" style="font-size:12px;padding:10px 0;">Chargement…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -210,39 +284,73 @@
 <script>
 const CURRENCY = ENIGMA_CONFIG.currency;
 
-let rooms      = [];
-let pricingMap = {};
-let products   = [];
-let cart       = [];
-let activeRoom = null;
-let voucherData = null;
+let rooms             = [];
+let pricingMap        = {};
+let products          = [];
+let cart              = [];
+let activeRoom        = null;
+let voucherData       = null;
+let extremeModeActive = false;
+let advanceSelected   = null;
+let advancesList      = [];
+let articleOnlyMode   = false;
 
 // ── Init ─────────────────────────────────────────────────────
 window.addEventListener('load', async () => {
   try { await requireAuth(); } catch(e) { return; }
   document.getElementById('inp-date').value = today();
+  document.getElementById('adv-date').value = today();
   await Promise.all([loadRooms(), loadProducts()]);
   loadDaySummary();
+  loadAdvances();
   updateTotal(0, 0);
 });
 
 function today() { return new Date().toISOString().slice(0,10); }
 
+// ── Mode vente sans salle ─────────────────────────────────────
+function toggleArticleOnly() {
+  articleOnlyMode = !articleOnlyMode;
+  document.getElementById('btn-article-only').classList.toggle('active', articleOnlyMode);
+  document.getElementById('session-section').classList.toggle('faded', articleOnlyMode);
+  if (articleOnlyMode) {
+    activeRoom = null; extremeModeActive = false;
+    document.getElementById('extreme-mode-row').classList.add('hidden');
+    document.getElementById('btn-extreme').classList.remove('active');
+    document.getElementById('sel-room').value = '';
+    pricingMap = {};
+    updateTotal(0, 0);
+  } else {
+    updateTotal(0, 0);
+  }
+}
+
+// ── Mode extrême ──────────────────────────────────────────────
+function toggleExtremeMode() {
+  if (!activeRoom?.has_extreme_mode) return;
+  extremeModeActive = !extremeModeActive;
+  document.getElementById('btn-extreme').classList.toggle('active', extremeModeActive);
+  updateTotal();
+}
+
 // ── Résumé du jour ────────────────────────────────────────────
 async function loadDaySummary() {
   const date = document.getElementById('inp-date').value || today();
-  const [tRes, iRes] = await Promise.all([
+  const [tRes, iRes, aRes] = await Promise.all([
     sb.from('tickets').select('total_price_xof,payment_especes_xof,payment_mobile_xof,payment_voucher_xof')
       .eq('session_date', date).eq('status','confirmed'),
     sb.from('ticket_items').select('total_xof, tickets!inner(session_date)').eq('tickets.session_date', date),
+    sb.from('advances').select('amount_xof,status').eq('date', date),
   ]);
   const tickets    = tRes.data || [];
   const items      = iRes.data || [];
+  const advances   = (aRes.data || []).filter(a => a.status !== 'penalty');
   const revenue    = tickets.reduce((s,t)=>s+t.total_price_xof,0);
   const cash       = tickets.reduce((s,t)=>s+t.payment_especes_xof,0);
   const mobile     = tickets.reduce((s,t)=>s+t.payment_mobile_xof,0);
   const voucher    = tickets.reduce((s,t)=>s+t.payment_voucher_xof,0);
   const itemsTotal = items.reduce((s,i)=>s+i.total_xof,0);
+  const advTotal   = advances.reduce((s,a)=>s+a.amount_xof,0);
 
   setText('ds-sessions', tickets.length);
   setText('ds-revenue',  fmt(revenue));
@@ -250,6 +358,7 @@ async function loadDaySummary() {
   setText('ds-mobile',   fmt(mobile));
   setText('ds-voucher',  fmt(voucher));
   setText('ds-items',    fmt(itemsTotal));
+  setText('ds-advances', advTotal > 0 ? fmt(advTotal) : '—');
 }
 
 // ── Loaders ──────────────────────────────────────────────────
@@ -271,9 +380,20 @@ async function loadProducts() {
 async function onRoomChange() {
   const roomId = document.getElementById('sel-room').value;
   activeRoom = rooms.find(r => r.id === roomId) || null;
+  extremeModeActive = false;
   pricingMap = {};
   document.getElementById('sel-slot').innerHTML = '<option value="">— Choisir —</option>';
   document.getElementById('price-info').classList.add('hidden');
+  const extremeRow = document.getElementById('extreme-mode-row');
+  const extremeBtn = document.getElementById('btn-extreme');
+  extremeBtn.classList.remove('active');
+  if (activeRoom?.has_extreme_mode) {
+    const price = activeRoom.extreme_mode_price_xof || 10000;
+    document.getElementById('extreme-price-label').textContent = price.toLocaleString('fr-FR');
+    extremeRow.classList.remove('hidden');
+  } else {
+    extremeRow.classList.add('hidden');
+  }
   if (!roomId) { updateTotal(0,0); return; }
   const [slotsRes, pricesRes] = await Promise.all([
     sb.from('time_slots').select('*').eq('room_id',roomId).eq('is_active',true).order('start_time'),
@@ -289,7 +409,7 @@ async function onRoomChange() {
 
 // ── Pricing ───────────────────────────────────────────────────
 function calcPrice() {
-  if (!activeRoom) { updateTotal(0,0); return; }
+  if (!activeRoom || articleOnlyMode) { updateTotal(0,0); return; }
   const n=parseInt(document.getElementById('inp-players').value)||0;
   const minP=activeRoom.min_players, maxP=activeRoom.max_players, extraPP=activeRoom.extra_player_price_xof||0;
   let base=0, extra=0, info='';
@@ -312,40 +432,47 @@ function calcPrice() {
 
 // ── Total ─────────────────────────────────────────────────────
 function updateTotal(baseOvr, extraOvr) {
-  const base     = baseOvr  !== undefined ? baseOvr  : _deriveBase();
-  const extra    = extraOvr !== undefined ? extraOvr : _deriveExtra();
-  const itemsAmt = cart.reduce((s,i)=>s+i.total_xof,0);
-  const discount = parseInt(document.getElementById('inp-discount').value)||0;
-  const voucherP = voucherData ? (parseInt(document.getElementById('pay-voucher').value)||0) : 0;
-  const total    = Math.max(0, base+extra+itemsAmt-discount);
-  const cashPay  = parseInt(document.getElementById('pay-cash').value)||0;
-  const mobilePay= parseInt(document.getElementById('pay-mobile').value)||0;
+  const base       = baseOvr  !== undefined ? baseOvr  : _deriveBase();
+  const extra      = extraOvr !== undefined ? extraOvr : _deriveExtra();
+  const extremeAmt = extremeModeActive ? (activeRoom?.extreme_mode_price_xof || 10000) : 0;
+  const itemsAmt   = cart.reduce((s,i)=>s+i.total_xof,0);
+  const discount   = parseInt(document.getElementById('inp-discount').value)||0;
+  const voucherP   = voucherData ? (parseInt(document.getElementById('pay-voucher').value)||0) : 0;
+  const subtotal   = Math.max(0, base+extra+extremeAmt+itemsAmt-discount);
+  const advanceP   = advanceSelected ? Math.min(advanceSelected.amount_xof, subtotal) : 0;
+  const total      = subtotal;
+  const cashPay    = parseInt(document.getElementById('pay-cash').value)||0;
+  const mobilePay  = parseInt(document.getElementById('pay-mobile').value)||0;
   const chequePay  = parseInt(document.getElementById('pay-cheque').value)||0;
   const virementPay= parseInt(document.getElementById('pay-virement').value)||0;
-  const paid     = cashPay+mobilePay+voucherP+chequePay+virementPay;
+  const paid       = cashPay+mobilePay+voucherP+chequePay+virementPay+advanceP;
 
   setText('t-session',  fmt(base));
   setText('t-extra',    fmt(extra));
+  setText('t-extreme',  fmt(extremeAmt));
   setText('t-items',    fmt(itemsAmt));
   setText('t-discount', `−${fmt(discount)}`);
   setText('t-voucher',  `−${fmt(voucherP)}`);
+  setText('t-advance',  `−${fmt(advanceP)}`);
   setText('t-total',    fmt(total));
   setText('t-remain',   fmt(Math.max(0,total-paid)));
   setVisible('t-extra-row',    extra>0);
+  setVisible('t-extreme-row',  extremeAmt>0);
   setVisible('t-items-row',    itemsAmt>0);
   setVisible('t-discount-row', discount>0);
   setVisible('t-voucher-row',  voucherP>0);
-  window._sale = { base, extra, itemsAmt, discount, voucherP, total };
+  setVisible('t-advance-row',  advanceP>0);
+  window._sale = { base, extra, extremeAmt, itemsAmt, discount, voucherP, advanceP, total };
 }
 function _deriveBase() {
-  if (!activeRoom) return 0;
+  if (!activeRoom || articleOnlyMode) return 0;
   const n=parseInt(document.getElementById('inp-players').value)||0;
   if (pricingMap[n]!==undefined) return pricingMap[n];
   const keys=Object.keys(pricingMap).map(Number).filter(k=>k<=n).sort((a,b)=>b-a);
   return keys.length ? pricingMap[keys[0]] : 0;
 }
 function _deriveExtra() {
-  if (!activeRoom) return 0;
+  if (!activeRoom || articleOnlyMode) return 0;
   const n=parseInt(document.getElementById('inp-players').value)||0;
   const maxP=activeRoom.max_players, extraPP=activeRoom.extra_player_price_xof||0;
   if (n<=maxP) return 0;
@@ -368,6 +495,103 @@ async function validateVoucher() {
   document.getElementById('voucher-info').textContent=`✓ Solde : ${fmt(data.remaining_amount_xof)} — appliqué : ${fmt(used)}`;
   document.getElementById('voucher-info').classList.remove('hidden');
   updateTotal(); toast('Bon cadeau appliqué','ok');
+}
+
+// ── Avances ───────────────────────────────────────────────────
+async function loadAdvances() {
+  const { data, error } = await sb.from('advances').select('*')
+    .eq('status','pending').order('reservation_date',{ascending:true,nullsFirst:false}).order('created_at',{ascending:false});
+  if (error) { toast('Erreur chargement avances','err'); return; }
+  advancesList = data || [];
+  renderAdvances(advancesList);
+}
+
+function renderAdvances(list) {
+  const el = document.getElementById('advances-list');
+  if (!list.length) {
+    el.innerHTML = '<div class="text-muted" style="font-size:12px;padding:10px 0;">Aucune avance en attente</div>';
+    return;
+  }
+  el.innerHTML = list.map(a => {
+    const isSelected = advanceSelected?.id === a.id;
+    const resDate = a.reservation_date ? ` · Rés. ${formatDate(a.reservation_date)}` : '';
+    const phoneStr = a.client_phone ? ` <span style="font-weight:400;color:var(--text3);">${escHtml(a.client_phone)}</span>` : '';
+    const notesStr = a.notes ? ` · ${escHtml(a.notes)}` : '';
+    return `<div class="advance-item${isSelected?' selected':''}">
+      <div class="ai-info">
+        <div class="ai-name">${escHtml(a.client_name)}${phoneStr}</div>
+        <div class="ai-meta">${formatDate(a.date)} · ${escHtml(a.payment_method)}${resDate}${notesStr}</div>
+      </div>
+      <div class="ai-amount">${fmt(a.amount_xof)}</div>
+      <div style="display:flex;flex-direction:column;gap:4px;">
+        ${isSelected
+          ? `<button class="btn btn-ghost btn-sm" style="color:var(--red);" onclick="clearAdvance()">✕ Retirer</button>`
+          : `<button class="btn btn-success btn-sm" onclick="selectAdvance('${a.id}')">✓ Utiliser</button>`}
+        <button class="btn btn-danger btn-sm" onclick="setAdvancePenalty('${a.id}')">⚠ Pénalité</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function saveAdvance() {
+  const name    = document.getElementById('adv-name').value.trim();
+  const phone   = document.getElementById('adv-phone').value.trim();
+  const amount  = parseInt(document.getElementById('adv-amount').value)||0;
+  const payment = document.getElementById('adv-payment').value;
+  const resdate = document.getElementById('adv-resdate').value;
+  const date    = document.getElementById('adv-date').value;
+  const notes   = document.getElementById('adv-notes').value.trim();
+  const op      = document.getElementById('adv-op').value.trim();
+  if (!name)   return toast('Nom du client requis','err');
+  if (!amount) return toast('Montant requis','err');
+  if (!date)   return toast('Date de versement requise','err');
+  if (!op)     return toast('Opérateur requis','err');
+  const { error } = await sb.from('advances').insert([{
+    client_name: name, client_phone: phone||null,
+    amount_xof: amount, payment_method: payment,
+    reservation_date: resdate||null, date,
+    notes: notes||null, operator_name: op, status: 'pending',
+  }]);
+  if (error) return toast('Erreur : '+error.message,'err');
+  toast('Avance enregistrée','ok');
+  document.getElementById('adv-name').value='';
+  document.getElementById('adv-phone').value='';
+  document.getElementById('adv-amount').value='';
+  document.getElementById('adv-resdate').value='';
+  document.getElementById('adv-notes').value='';
+  loadAdvances();
+  loadDaySummary();
+}
+
+function selectAdvance(id) {
+  const advance = advancesList.find(a => a.id === id);
+  if (!advance) return;
+  advanceSelected = advance;
+  const el = document.getElementById('advance-pay-info');
+  el.textContent = `✓ Avance de ${advance.client_name} — ${fmt(advance.amount_xof)} sera déduite du total`;
+  el.classList.remove('hidden');
+  renderAdvances(advancesList);
+  updateTotal();
+}
+
+function clearAdvance() {
+  advanceSelected = null;
+  document.getElementById('advance-pay-info').classList.add('hidden');
+  renderAdvances(advancesList);
+  updateTotal();
+}
+
+async function setAdvancePenalty(id) {
+  if (!confirm('Passer cette avance en pénalité ? Elle ne pourra plus être utilisée.')) return;
+  const { error } = await sb.from('advances').update({ status: 'penalty' }).eq('id', id);
+  if (error) return toast('Erreur','err');
+  if (advanceSelected?.id === id) clearAdvance();
+  else {
+    advancesList = advancesList.filter(a => a.id !== id);
+    renderAdvances(advancesList);
+  }
+  toast('Avance passée en pénalité','ok');
+  loadDaySummary();
 }
 
 // ── Cart / Products ───────────────────────────────────────────
@@ -397,89 +621,146 @@ async function saveSale(doPrint) {
   if (!validate()) return;
   const btn=document.getElementById('btn-validate'); btn.disabled=true;
   try {
-    const ticketNum=await nextTicketNumber();
-    const s=window._sale;
-    const cashPay    =parseInt(document.getElementById('pay-cash').value)||0;
-    const mobilePay  =parseInt(document.getElementById('pay-mobile').value)||0;
-    const voucherPay =parseInt(document.getElementById('pay-voucher').value)||0;
-    const chequePay  =parseInt(document.getElementById('pay-cheque').value)||0;
-    const virementPay=parseInt(document.getElementById('pay-virement').value)||0;
-    const payRef     =document.getElementById('pay-ref').value.trim();
-    const ticketType =document.getElementById('sel-type').value;
-    const {data:ticket,error:tErr}=await sb.from('tickets').insert([{
-      ticket_number:ticketNum,room_id:activeRoom.id,room_name:activeRoom.name,
-      session_date:document.getElementById('inp-date').value,
-      time_slot:document.getElementById('sel-slot').value,
-      num_players:parseInt(document.getElementById('inp-players').value),
-      base_price_xof:s.base,extra_price_xof:s.extra,discount_xof:s.discount,total_price_xof:s.total,
-      payment_especes_xof:cashPay,payment_mobile_xof:mobilePay,payment_voucher_xof:voucherPay,
-      payment_cheque_xof:chequePay,payment_virement_xof:virementPay,
-      voucher_id:voucherData?voucherData.id:null,
-      ticket_type:ticketType,
-      operator_name:document.getElementById('inp-operator').value.trim(),
-      notes:document.getElementById('inp-notes').value.trim(),status:'confirmed',
-    }]).select().single();
+    const ticketNum  = await nextTicketNumber();
+    const s          = window._sale;
+    const cashPay    = parseInt(document.getElementById('pay-cash').value)||0;
+    const mobilePay  = parseInt(document.getElementById('pay-mobile').value)||0;
+    const voucherPay = parseInt(document.getElementById('pay-voucher').value)||0;
+    const chequePay  = parseInt(document.getElementById('pay-cheque').value)||0;
+    const virementPay= parseInt(document.getElementById('pay-virement').value)||0;
+    const payRef     = document.getElementById('pay-ref').value.trim();
+    const ticketType = document.getElementById('sel-type').value;
+    const sessionDate= document.getElementById('inp-date').value;
+    const op         = document.getElementById('inp-operator').value.trim();
+
+    const ticketPayload = {
+      ticket_number:       ticketNum,
+      session_date:        sessionDate,
+      num_players:         articleOnlyMode ? 0 : parseInt(document.getElementById('inp-players').value)||0,
+      base_price_xof:      s.base,
+      extra_price_xof:     s.extra,
+      extreme_mode_xof:    s.extremeAmt,
+      discount_xof:        s.discount,
+      total_price_xof:     s.total,
+      payment_especes_xof: cashPay,
+      payment_mobile_xof:  mobilePay,
+      payment_voucher_xof: voucherPay,
+      payment_cheque_xof:  chequePay,
+      payment_virement_xof:virementPay,
+      payment_advance_xof: s.advanceP,
+      advance_id:          advanceSelected?.id || null,
+      voucher_id:          voucherData ? voucherData.id : null,
+      ticket_type:         ticketType,
+      operator_name:       op,
+      notes:               document.getElementById('inp-notes').value.trim(),
+      status:              'confirmed',
+    };
+    if (activeRoom) {
+      ticketPayload.room_id   = activeRoom.id;
+      ticketPayload.room_name = activeRoom.name;
+      ticketPayload.time_slot = document.getElementById('sel-slot').value;
+    }
+
+    const { data:ticket, error:tErr } = await sb.from('tickets').insert([ticketPayload]).select().single();
     if (tErr) throw tErr;
-    if (cart.length) await sb.from('ticket_items').insert(cart.map(i=>({ticket_id:ticket.id,product_id:i.product_id,name:i.name,qty:i.qty,unit_price_xof:i.unit_price_xof,total_xof:i.total_xof})));
-    // Créer transactions bancaires pour chèque/virement
-    const bankInserts=[];
-    if(chequePay>0) bankInserts.push({date:ticket.session_date,type:'credit',amount_xof:chequePay,category:'cheque',description:`${ticketType==='forfait'?'Forfait':'Ticket'} ${ticketNum}`,reference:payRef||null,ticket_id:ticket.id,created_by:document.getElementById('inp-operator').value.trim()});
-    if(virementPay>0) bankInserts.push({date:ticket.session_date,type:'credit',amount_xof:virementPay,category:'virement',description:`${ticketType==='forfait'?'Forfait':'Ticket'} ${ticketNum}`,reference:payRef||null,ticket_id:ticket.id,created_by:document.getElementById('inp-operator').value.trim()});
-    if(bankInserts.length) await sb.from('bank_transactions').insert(bankInserts);
-    if (voucherData&&voucherPay>0) {
-      const nb=voucherData.remaining_amount_xof-voucherPay;
+
+    if (cart.length) {
+      await sb.from('ticket_items').insert(cart.map(i=>({
+        ticket_id:i.ticket_id||ticket.id, product_id:i.product_id,
+        name:i.name, qty:i.qty, unit_price_xof:i.unit_price_xof, total_xof:i.total_xof,
+      })));
+    }
+
+    // Transactions bancaires chèque/virement
+    const bankInserts = [];
+    const typeLabel   = ticketType==='forfait'?'Forfait':'Ticket';
+    if (chequePay>0)   bankInserts.push({date:sessionDate,type:'credit',amount_xof:chequePay,  category:'cheque',  description:`${typeLabel} ${ticketNum}`,reference:payRef||null,ticket_id:ticket.id,created_by:op});
+    if (virementPay>0) bankInserts.push({date:sessionDate,type:'credit',amount_xof:virementPay,category:'virement',description:`${typeLabel} ${ticketNum}`,reference:payRef||null,ticket_id:ticket.id,created_by:op});
+    if (bankInserts.length) await sb.from('bank_transactions').insert(bankInserts);
+
+    // Déduire le bon cadeau
+    if (voucherData && voucherPay>0) {
+      const nb = voucherData.remaining_amount_xof-voucherPay;
       await sb.from('vouchers').update({remaining_amount_xof:Math.max(0,nb),is_active:nb>0}).eq('id',voucherData.id);
     }
+
+    // Marquer l'avance comme utilisée
+    if (advanceSelected && s.advanceP>0) {
+      await sb.from('advances').update({
+        status:'used', used_ticket_id:ticket.id, used_at:new Date().toISOString(),
+      }).eq('id', advanceSelected.id);
+    }
+
     toast(`✓ Ticket ${ticketNum} enregistré`,'ok');
-    if (doPrint){buildTicketHTML(ticket,[...cart]);document.body.classList.add('print-ticket');window.print();document.body.classList.remove('print-ticket');}
+    if (doPrint) { buildTicketHTML(ticket,[...cart]); document.body.classList.add('print-ticket'); window.print(); document.body.classList.remove('print-ticket'); }
     resetForm();
     loadDaySummary();
+    loadAdvances();
   } catch(e) { console.error(e); toast('Erreur : '+(e.message||String(e)),'err'); }
   finally { btn.disabled=false; }
 }
 
 async function nextTicketNumber() {
-  const d=document.getElementById('inp-date').value.replace(/-/g,'');
-  const {data}=await sb.from('tickets').select('ticket_number').like('ticket_number',`EG-${d}-%`).order('ticket_number',{ascending:false}).limit(1);
-  let seq=1;
-  if (data&&data.length) seq=parseInt(data[0].ticket_number.split('-')[2]||'0')+1;
+  const d = document.getElementById('inp-date').value.replace(/-/g,'');
+  const { data } = await sb.from('tickets').select('ticket_number').like('ticket_number',`EG-${d}-%`).order('ticket_number',{ascending:false}).limit(1);
+  let seq = 1;
+  if (data&&data.length) seq = parseInt(data[0].ticket_number.split('-')[2]||'0')+1;
   return `EG-${d}-${String(seq).padStart(3,'0')}`;
 }
 
 function validate() {
-  if (!document.getElementById('sel-room').value)         return toast('Choisir une salle','err'),false;
-  if (!document.getElementById('inp-date').value)         return toast('Choisir une date','err'),false;
-  if (!document.getElementById('sel-slot').value)         return toast('Choisir un créneau','err'),false;
-  if (!document.getElementById('inp-operator').value.trim()) return toast("Nom de l'opérateur requis",'err'),false;
-  const s=window._sale;
-  if (!s||s.total<=0) return toast('Montant total invalide','err'),false;
-  const paid=(parseInt(document.getElementById('pay-cash').value)||0)+(parseInt(document.getElementById('pay-mobile').value)||0)+(parseInt(document.getElementById('pay-voucher').value)||0)+(parseInt(document.getElementById('pay-cheque').value)||0)+(parseInt(document.getElementById('pay-virement').value)||0);
-  if (paid<s.total) return toast(`Paiement insuffisant : ${fmt(s.total-paid)} manquant`,'err'),false;
+  if (!articleOnlyMode) {
+    if (!document.getElementById('sel-room').value) return toast('Choisir une salle','err'),false;
+    if (!document.getElementById('sel-slot').value) return toast('Choisir un créneau','err'),false;
+  } else {
+    if (!cart.length) return toast('Ajouter au moins un article','err'),false;
+  }
+  if (!document.getElementById('inp-date').value)               return toast('Choisir une date','err'),false;
+  if (!document.getElementById('inp-operator').value.trim())    return toast("Nom de l'opérateur requis",'err'),false;
+  const s = window._sale;
+  if (!s || s.total <= 0) return toast('Montant total invalide','err'),false;
+  const paid = (parseInt(document.getElementById('pay-cash').value)||0)
+    +(parseInt(document.getElementById('pay-mobile').value)||0)
+    +(parseInt(document.getElementById('pay-voucher').value)||0)
+    +(parseInt(document.getElementById('pay-cheque').value)||0)
+    +(parseInt(document.getElementById('pay-virement').value)||0)
+    +(s.advanceP||0);
+  if (paid < s.total) return toast(`Paiement insuffisant : ${fmt(s.total-paid)} manquant`,'err'),false;
   return true;
 }
 
 // ── Print ticket ──────────────────────────────────────────────
-function buildTicketHTML(ticket,items) {
-  const itemsTotal=items.reduce((s,i)=>s+i.total_xof,0);
-  const itemsHTML=items.length?`<hr class="ticket-sep"><div style="font-size:9px;font-weight:bold;margin-bottom:2mm;">ARTICLES</div><div class="ticket-items">${items.map(i=>`<div class="item-row"><span class="item-label">${escHtml(i.name)}</span><span class="item-qty">${i.qty}×</span><span class="item-price">${fmt(i.total_xof)}</span></div>`).join('')}</div>`:'';
-  document.getElementById('ticket-content').innerHTML=`
+function buildTicketHTML(ticket, items) {
+  const itemsHTML = items.length
+    ? `<hr class="ticket-sep"><div style="font-size:11px;font-weight:bold;margin-bottom:2mm;">ARTICLES</div><div class="ticket-items">${items.map(i=>`<div class="item-row"><span class="item-label">${escHtml(i.name)}</span><span class="item-qty">${i.qty}×</span><span class="item-price">${fmt(i.total_xof)}</span></div>`).join('')}</div>`
+    : '';
+  const extremeHTML  = ticket.extreme_mode_xof>0 ? `<div class="ticket-row"><span class="label">⚡ Mode Extrême</span><span class="value">${fmt(ticket.extreme_mode_xof)}</span></div>` : '';
+  const advanceHTML  = ticket.payment_advance_xof>0 ? `<div class="ticket-row"><span class="label">Avance déduite</span><span class="value">−${fmt(ticket.payment_advance_xof)}</span></div>` : '';
+  const roomLine     = ticket.room_name ? `<div class="ticket-row"><span class="label">Salle</span><span class="value">${escHtml(ticket.room_name)}</span></div>` : `<div class="ticket-row"><span class="label">Type</span><span class="value">Vente articles</span></div>`;
+  const slotLine     = ticket.time_slot ? `<div class="ticket-row"><span class="label">Créneau</span><span class="value">${ticket.time_slot}</span></div>` : '';
+  const playersLine  = ticket.num_players>0 ? `<div class="ticket-row"><span class="label">Joueurs</span><span class="value">${ticket.num_players}</span></div>` : '';
+  document.getElementById('ticket-content').innerHTML = `
     <div class="ticket-header"><div class="biz-name">${ENIGMA_CONFIG.businessName}</div><div class="ticket-title">Billet d'entrée</div></div>
     <div class="ticket-number">${ticket.ticket_number}</div>
-    <div class="ticket-row"><span class="label">Salle</span><span class="value">${escHtml(ticket.room_name)}</span></div>
+    ${roomLine}
     <div class="ticket-row"><span class="label">Date</span><span class="value">${formatDate(ticket.session_date)}</span></div>
-    <div class="ticket-row"><span class="label">Créneau</span><span class="value">${ticket.time_slot}</span></div>
-    <div class="ticket-row"><span class="label">Joueurs</span><span class="value">${ticket.num_players}</span></div>
+    ${slotLine}${playersLine}
     <hr class="ticket-sep">
-    <div class="ticket-row"><span class="label">Session</span><span class="value">${fmt(ticket.base_price_xof)}</span></div>
+    ${ticket.base_price_xof>0?`<div class="ticket-row"><span class="label">Session</span><span class="value">${fmt(ticket.base_price_xof)}</span></div>`:''}
     ${ticket.extra_price_xof>0?`<div class="ticket-row"><span class="label">Supplément</span><span class="value">${fmt(ticket.extra_price_xof)}</span></div>`:''}
+    ${extremeHTML}
     ${itemsHTML}
     ${ticket.discount_xof>0?`<hr class="ticket-sep"><div class="ticket-row"><span class="label">Remise</span><span class="value">−${fmt(ticket.discount_xof)}</span></div>`:''}
+    ${advanceHTML}
     <hr class="ticket-sep">
     <div class="ticket-total"><span>TOTAL</span><span>${fmt(ticket.total_price_xof)}</span></div>
     <div class="ticket-payments">
       ${ticket.payment_especes_xof>0?`<div class="pay-row"><span>Espèces</span><span>${fmt(ticket.payment_especes_xof)}</span></div>`:''}
       ${ticket.payment_mobile_xof>0?`<div class="pay-row"><span>Mobile Money</span><span>${fmt(ticket.payment_mobile_xof)}</span></div>`:''}
       ${ticket.payment_voucher_xof>0?`<div class="pay-row"><span>Bon cadeau</span><span>${fmt(ticket.payment_voucher_xof)}</span></div>`:''}
+      ${ticket.payment_cheque_xof>0?`<div class="pay-row"><span>Chèque</span><span>${fmt(ticket.payment_cheque_xof)}</span></div>`:''}
+      ${ticket.payment_virement_xof>0?`<div class="pay-row"><span>Virement</span><span>${fmt(ticket.payment_virement_xof)}</span></div>`:''}
+      ${ticket.payment_advance_xof>0?`<div class="pay-row"><span>Avance</span><span>${fmt(ticket.payment_advance_xof)}</span></div>`:''}
     </div>
     <hr class="ticket-sep">
     <div class="ticket-row"><span class="label">Opérateur</span><span class="value">${escHtml(ticket.operator_name)}</span></div>
@@ -489,28 +770,43 @@ function buildTicketHTML(ticket,items) {
 
 // ── Daily Report ──────────────────────────────────────────────
 async function openDailyReport() {
-  const date=document.getElementById('inp-date').value||today();
-  const [tRes,iRes]=await Promise.all([
+  const date = document.getElementById('inp-date').value||today();
+  const [tRes,iRes,aRes] = await Promise.all([
     sb.from('tickets').select('*').eq('session_date',date).eq('status','confirmed').order('time_slot'),
     sb.from('ticket_items').select('*, tickets!inner(session_date)').eq('tickets.session_date',date),
+    sb.from('advances').select('*').eq('date',date),
   ]);
   if (tRes.error) return toast('Erreur chargement rapport','err');
-  const tickets=tRes.data||[], allItems=iRes.data||[];
+  const tickets=tRes.data||[], allItems=iRes.data||[], advToday=aRes.data||[];
   const byTicket={};
   allItems.forEach(i=>{if(!byTicket[i.ticket_id])byTicket[i.ticket_id]=[];byTicket[i.ticket_id].push(i);});
-  const totalRevenue=tickets.reduce((s,t)=>s+t.total_price_xof,0);
-  const totalItems=allItems.reduce((s,i)=>s+i.total_xof,0);
-  const totalCash=tickets.reduce((s,t)=>s+t.payment_especes_xof,0);
-  const totalMobile=tickets.reduce((s,t)=>s+t.payment_mobile_xof,0);
-  const totalVoucher=tickets.reduce((s,t)=>s+t.payment_voucher_xof,0);
-  const itemAgg={};
+  const totalRevenue  = tickets.reduce((s,t)=>s+t.total_price_xof,0);
+  const totalItems    = allItems.reduce((s,i)=>s+i.total_xof,0);
+  const totalCash     = tickets.reduce((s,t)=>s+t.payment_especes_xof,0);
+  const totalMobile   = tickets.reduce((s,t)=>s+t.payment_mobile_xof,0);
+  const totalVoucher  = tickets.reduce((s,t)=>s+t.payment_voucher_xof,0);
+  const totalCheque   = tickets.reduce((s,t)=>s+(t.payment_cheque_xof||0),0);
+  const totalVirement = tickets.reduce((s,t)=>s+(t.payment_virement_xof||0),0);
+  const totalAdvances = advToday.filter(a=>a.status!=='penalty').reduce((s,a)=>s+a.amount_xof,0);
+  const itemAgg = {};
   allItems.forEach(i=>{if(!itemAgg[i.name])itemAgg[i.name]={qty:0,total:0};itemAgg[i.name].qty+=i.qty;itemAgg[i.name].total+=i.total_xof;});
-  const sessHTML=tickets.length?tickets.map(t=>{
-    const ti=byTicket[t.id]||[];const tit=ti.reduce((s,i)=>s+i.total_xof,0);
-    const parts=[];if(t.payment_especes_xof>0)parts.push(`Esp:${fmt(t.payment_especes_xof)}`);if(t.payment_mobile_xof>0)parts.push(`Mob:${fmt(t.payment_mobile_xof)}`);if(t.payment_voucher_xof>0)parts.push(`BC:${fmt(t.payment_voucher_xof)}`);
-    return `<div class="report-session-row"><span class="col-time">${t.time_slot}</span><span class="col-room">${escHtml(t.room_name)}</span><span class="col-pax">${t.num_players}j</span><span class="col-total">${fmt(t.total_price_xof)}</span></div><div class="report-session-sub">${t.ticket_number} | ${parts.join(' / ')}${tit>0?` | Art:${fmt(tit)}`:''}</div>`;
-  }).join(''):'<div style="font-size:9px;color:#555;">Aucune session ce jour</div>';
-  const itemsHTML=Object.keys(itemAgg).length?Object.entries(itemAgg).map(([n,a])=>`<div class="report-item-row"><span class="col-name">${escHtml(n)}</span><span class="col-qty">${a.qty}</span><span class="col-total">${fmt(a.total)}</span></div>`).join(''):'<div style="font-size:9px;color:#555;">Aucun article</div>';
+  const sessHTML = tickets.length
+    ? tickets.map(t=>{
+        const ti=byTicket[t.id]||[]; const tit=ti.reduce((s,i)=>s+i.total_xof,0);
+        const parts=[];
+        if(t.payment_especes_xof>0)        parts.push(`Esp:${fmt(t.payment_especes_xof)}`);
+        if(t.payment_mobile_xof>0)         parts.push(`Mob:${fmt(t.payment_mobile_xof)}`);
+        if(t.payment_voucher_xof>0)        parts.push(`BC:${fmt(t.payment_voucher_xof)}`);
+        if((t.payment_cheque_xof||0)>0)    parts.push(`Chq:${fmt(t.payment_cheque_xof)}`);
+        if((t.payment_virement_xof||0)>0)  parts.push(`Vir:${fmt(t.payment_virement_xof)}`);
+        if((t.payment_advance_xof||0)>0)   parts.push(`Av:${fmt(t.payment_advance_xof)}`);
+        return `<div class="report-session-row"><span class="col-time">${t.time_slot||'—'}</span><span class="col-room">${escHtml(t.room_name||'Articles')}</span><span class="col-pax">${t.num_players||0}j</span><span class="col-total">${fmt(t.total_price_xof)}</span></div><div class="report-session-sub">${t.ticket_number} | ${parts.join(' / ')}${tit>0?` | Art:${fmt(tit)}`:''}</div>`;
+      }).join('')
+    : '<div style="font-size:9px;color:#555;">Aucune session ce jour</div>';
+  const itemsHTML = Object.keys(itemAgg).length
+    ? Object.entries(itemAgg).map(([n,a])=>`<div class="report-item-row"><span class="col-name">${escHtml(n)}</span><span class="col-qty">${a.qty}</span><span class="col-total">${fmt(a.total)}</span></div>`).join('')
+    : '<div style="font-size:9px;color:#555;">Aucun article</div>';
+  const advHTML = advToday.map(a=>`<div class="report-total-row"><span>${escHtml(a.client_name)} (${escHtml(a.payment_method)})</span><span${a.status==='penalty'?' style="color:#ef4444;"':''}>${a.status==='penalty'?'Pénalité':fmt(a.amount_xof)}</span></div>`).join('');
   document.getElementById('report-content').innerHTML=`
     <div class="report-header"><div class="biz-name">${ENIGMA_CONFIG.businessName}</div><div class="report-title">Rapport de journée</div><div class="report-date">${formatDate(date)} — ${tickets.length} session(s)</div></div>
     <div class="report-section-title">Sessions</div>
@@ -519,6 +815,7 @@ async function openDailyReport() {
     <div class="report-section-title">Articles vendus</div>
     <div class="report-item-row" style="font-size:8px;font-weight:bold;border-bottom:1px solid #000;margin-bottom:2mm;"><span class="col-name">Article</span><span class="col-qty">Qté</span><span class="col-total">Total</span></div>
     ${itemsHTML}
+    ${advToday.length?`<div class="report-section-title">Avances reçues</div>${advHTML}`:''}
     <div class="report-section-title">Récapitulatif</div>
     <div class="report-totals">
       <div class="report-total-row"><span>Sessions</span><span>${fmt(totalRevenue)}</span></div>
@@ -528,6 +825,9 @@ async function openDailyReport() {
       ${totalCash>0?`<div class="report-total-row"><span>dont Espèces</span><span>${fmt(totalCash)}</span></div>`:''}
       ${totalMobile>0?`<div class="report-total-row"><span>dont Mobile Money</span><span>${fmt(totalMobile)}</span></div>`:''}
       ${totalVoucher>0?`<div class="report-total-row"><span>dont Bons cadeaux</span><span>${fmt(totalVoucher)}</span></div>`:''}
+      ${totalCheque>0?`<div class="report-total-row"><span>dont Chèques</span><span>${fmt(totalCheque)}</span></div>`:''}
+      ${totalVirement>0?`<div class="report-total-row"><span>dont Virements</span><span>${fmt(totalVirement)}</span></div>`:''}
+      ${totalAdvances>0?`<div class="report-total-row"><span>Avances reçues</span><span>${fmt(totalAdvances)}</span></div>`:''}
     </div>
     <div class="report-footer">Imprimé le ${new Date().toLocaleString('fr-FR')}<br>${ENIGMA_CONFIG.businessName}</div>`;
   document.body.classList.add('print-report'); window.print(); document.body.classList.remove('print-report');
@@ -552,7 +852,15 @@ function resetForm() {
   document.getElementById('sel-type').value='standard';
   document.getElementById('price-info').classList.add('hidden');
   document.getElementById('voucher-info').classList.add('hidden');
-  activeRoom=null; voucherData=null; cart=[]; pricingMap=[];
+  document.getElementById('advance-pay-info').classList.add('hidden');
+  document.getElementById('extreme-mode-row').classList.add('hidden');
+  document.getElementById('btn-extreme').classList.remove('active');
+  if (articleOnlyMode) {
+    articleOnlyMode = false;
+    document.getElementById('btn-article-only').classList.remove('active');
+    document.getElementById('session-section').classList.remove('faded');
+  }
+  activeRoom=null; voucherData=null; advanceSelected=null; extremeModeActive=false; cart=[]; pricingMap={};
   renderCart(); updateTotal(0,0);
 }
 
