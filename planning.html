@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Planning — Enigma</title>
+  <link rel="stylesheet" href="shared/style.css">
+  <style>
+    .planning-layout {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: 16px;
+      align-items: start;
+    }
+    @media (max-width: 960px) { .planning-layout { grid-template-columns: 1fr; } }
+
+    /* ── Iframe calendrier ─────────────────────────────────── */
+    .calendar-wrap {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      min-height: 500px;
+    }
+    .calendar-wrap iframe {
+      width: 100%;
+      height: 600px;
+      border: none;
+      display: block;
+    }
+
+    /* ── Setup guide ───────────────────────────────────────── */
+    .setup-guide {
+      padding: 32px;
+      text-align: center;
+      color: var(--text2);
+    }
+    .setup-guide h2 { font-size: 16px; font-weight: 700; margin-bottom: 12px; color: var(--text); }
+    .setup-guide ol { text-align: left; max-width: 480px; margin: 0 auto; line-height: 2; font-size: 13px; }
+    .setup-guide code { background: var(--bg3); padding: 2px 6px; border-radius: 4px; font-size: 12px; color: var(--cyan); }
+
+    /* ── Prochains événements ──────────────────────────────── */
+    .event-card {
+      padding: 12px 14px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--purple);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      cursor: default;
+      transition: border-color .15s;
+    }
+    .event-card:hover { border-left-color: var(--cyan); }
+    .event-card.today  { border-left-color: var(--green); }
+    .event-card.past   { opacity: .5; }
+    .event-title  { font-weight: 600; font-size: 13px; margin-bottom: 3px; }
+    .event-date   { font-size: 11px; color: var(--cyan); font-weight: 600; }
+    .event-loc    { font-size: 11px; color: var(--text3); margin-top: 2px; }
+    .event-desc   { font-size: 11px; color: var(--text2); margin-top: 4px; line-height: 1.5; }
+
+    .empty-state  { text-align: center; padding: 32px; color: var(--text3); font-size: 13px; }
+
+    /* ── Barre de contrôle ─────────────────────────────────── */
+    .ctrl-bar {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .ics-status { font-size: 11px; padding: 3px 10px; border-radius: 20px; }
+    .ics-ok  { background: rgba(74,222,128,.12); color: var(--green); }
+    .ics-err { background: rgba(248,113,113,.12); color: var(--red); }
+  </style>
+</head>
+<body>
+<nav class="navbar">
+  <a class="navbar-brand" href="caisse.html">Enigma <span>Escape Game</span></a>
+  <a class="nav-link" href="caisse.html">🎫 Caisse</a>
+  <a class="nav-link" href="depenses.html">💸 Dépenses</a>
+  <a class="nav-link active" href="planning.html">📅 Planning</a>
+  <a class="nav-link hidden" id="nav-rapprochements" href="rapprochements.html">📊 Rapprochements</a>
+  <a class="nav-link hidden" id="nav-admin" href="admin.html">⚙️ Admin</a>
+  <span id="nav-user" style="font-size:11px;color:var(--text3);margin-left:auto;padding:0 12px;"></span>
+  <button class="btn btn-ghost btn-sm" onclick="logout()">Déconnexion</button>
+</nav>
+<div id="toast-container"></div>
+
+<div class="page">
+  <div class="ctrl-bar">
+    <div class="page-title" style="margin:0;">📅 Planning</div>
+    <span id="ics-status" style="display:none;"></span>
+    <button class="btn btn-ghost btn-sm" onclick="refreshICS()" id="btn-refresh" style="display:none;">↻ Rafraîchir</button>
+  </div>
+
+  <div class="planning-layout">
+
+    <!-- ── Calendrier principal ────────────────────────────── -->
+    <div class="calendar-wrap" id="calendar-wrap">
+      <div class="setup-guide" id="setup-guide">
+        <div style="font-size:48px;margin-bottom:12px;">📅</div>
+        <h2>Calendrier non configuré</h2>
+        <p style="font-size:13px;margin-bottom:20px;">Ajoutez vos URLs dans <code>shared/config.js</code> :</p>
+        <ol>
+          <li>Ouvrez Google Calendar → <strong>Paramètres</strong></li>
+          <li>Sélectionnez votre agenda → <strong>Intégrer l'agenda</strong></li>
+          <li>Copiez l'URL de l'<code>&lt;iframe src="…"&gt;</code> → collez dans <code>calendarEmbedUrl</code></li>
+          <li>Copiez <em>l'adresse publique au format iCal</em> → collez dans <code>calendarIcsUrl</code></li>
+        </ol>
+      </div>
+    </div>
+
+    <!-- ── Prochains événements ────────────────────────────── -->
+    <div class="card">
+      <div class="card-title">Prochains événements</div>
+      <div id="events-list">
+        <div class="empty-state">Chargement…</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="shared/config.js"></script>
+<script src="shared/auth.js"></script>
+<script>
+window.addEventListener('load', async () => {
+  try { await requireAuth(); } catch(e) { return; }
+
+  // ── Embed iframe ────────────────────────────────────────────
+  if (ENIGMA_CONFIG.calendarEmbedUrl) {
+    const wrap = document.getElementById('calendar-wrap');
+    wrap.innerHTML = `<iframe src="${escHtml(ENIGMA_CONFIG.calendarEmbedUrl)}" frameborder="0" scrolling="no" allowfullscreen></iframe>`;
+  }
+
+  // ── ICS feed ────────────────────────────────────────────────
+  if (ENIGMA_CONFIG.calendarIcsUrl) {
+    document.getElementById('btn-refresh').style.display = '';
+    await loadICS();
+  } else {
+    document.getElementById('events-list').innerHTML = '<div class="empty-state">Configurez <code>calendarIcsUrl</code> dans config.js pour voir les événements.</div>';
+  }
+});
+
+async function loadICS() {
+  const url = ENIGMA_CONFIG.calendarIcsUrl;
+  if (!url) return;
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    const events = parseICS(text);
+    renderEvents(events);
+    setICSStatus('ok', `${events.length} événement(s) chargé(s)`);
+  } catch(e) {
+    setICSStatus('err', 'Impossible de charger le calendrier ICS (CORS ou URL invalide)');
+    document.getElementById('events-list').innerHTML = `<div class="empty-state" style="color:var(--red);">Erreur : ${escHtml(e.message)}<br><br>Vérifiez que l'URL ICS est accessible publiquement.</div>`;
+  }
+}
+
+async function refreshICS() { await loadICS(); }
+
+function setICSStatus(type, msg) {
+  const el = document.getElementById('ics-status');
+  el.style.display = '';
+  el.className = `ics-status ics-${type}`;
+  el.textContent = msg;
+}
+
+// ── Rendu des événements ────────────────────────────────────
+function renderEvents(events) {
+  const now   = new Date();
+  const soon  = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 jours
+  const upcoming = events.filter(e => e.start && e.start >= new Date(now.setHours(0,0,0,0)));
+
+  if (!upcoming.length) {
+    document.getElementById('events-list').innerHTML = '<div class="empty-state">Aucun événement à venir</div>';
+    return;
+  }
+
+  const isToday = d => {
+    const t = new Date(); return d.getDate()===t.getDate() && d.getMonth()===t.getMonth() && d.getFullYear()===t.getFullYear();
+  };
+
+  document.getElementById('events-list').innerHTML = upcoming.slice(0, 20).map(ev => {
+    const cls = isToday(ev.start) ? 'today' : '';
+    const dateStr = formatEventDate(ev.start, ev.end, ev.allDay);
+    return `<div class="event-card ${cls}">
+      <div class="event-title">${escHtml(ev.title)}</div>
+      <div class="event-date">${dateStr}</div>
+      ${ev.location ? `<div class="event-loc">📍 ${escHtml(ev.location)}</div>` : ''}
+      ${ev.description ? `<div class="event-desc">${escHtml(ev.description.slice(0,120))}${ev.description.length>120?'…':''}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function formatEventDate(start, end, allDay) {
+  if (!start) return '';
+  const opts = { weekday: 'short', day: '2-digit', month: 'short' };
+  const timeOpts = { hour: '2-digit', minute: '2-digit' };
+  if (allDay) return start.toLocaleDateString('fr-FR', opts);
+  let str = start.toLocaleDateString('fr-FR', opts) + ' ' + start.toLocaleTimeString('fr-FR', timeOpts);
+  if (end && end - start < 24 * 3600 * 1000) str += ' → ' + end.toLocaleTimeString('fr-FR', timeOpts);
+  return str;
+}
+
+// ── Parser ICS ──────────────────────────────────────────────
+function parseICS(text) {
+  // Dépliage des lignes (continuation avec espace/tab)
+  const raw = text.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '');
+  const lines = raw.split(/\r\n|\n|\r/);
+
+  const events = [];
+  let cur = null;
+
+  for (const line of lines) {
+    if (line === 'BEGIN:VEVENT') {
+      cur = {};
+    } else if (line === 'END:VEVENT' && cur) {
+      if (cur.title && cur.start) events.push(cur);
+      cur = null;
+    } else if (cur) {
+      const ci = line.indexOf(':');
+      if (ci === -1) continue;
+      const rawKey = line.slice(0, ci);
+      const key    = rawKey.split(';')[0].toUpperCase();
+      const params = rawKey.slice(key.length);
+      const val    = line.slice(ci + 1)
+        .replace(/\\n/g, '\n').replace(/\\,/g, ',')
+        .replace(/\\;/g, ';').replace(/\\\\/g, '\\').trim();
+
+      if (key === 'DTSTART' || key === 'DTEND') {
+        const allDay = !val.includes('T') && !params.includes('VALUE=DATE-TIME');
+        cur[key === 'DTSTART' ? 'start' : 'end'] = parseICSDate(val);
+        if (key === 'DTSTART') cur.allDay = allDay;
+      } else if (key === 'SUMMARY')     { cur.title       = val; }
+        else if (key === 'DESCRIPTION') { cur.description = val; }
+        else if (key === 'LOCATION')    { cur.location    = val; }
+        else if (key === 'UID')         { cur.id          = val; }
+    }
+  }
+
+  return events.sort((a, b) => (a.start || 0) - (b.start || 0));
+}
+
+function parseICSDate(val) {
+  if (!val) return null;
+  const isUTC = val.endsWith('Z');
+  const clean  = val.replace('Z', '');
+  if (clean.includes('T')) {
+    const d = clean.slice(0,8), t = clean.slice(9) || clean.slice(8);
+    const iso = `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}T${t.slice(0,2)}:${t.slice(2,4)}:${t.slice(4,6)||'00'}${isUTC?'Z':''}`;
+    return new Date(iso);
+  }
+  return new Date(`${clean.slice(0,4)}-${clean.slice(4,6)}-${clean.slice(6,8)}`);
+}
+
+// ── Helpers ─────────────────────────────────────────────────
+function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function toast(msg,type='info'){const c=document.getElementById('toast-container');const t=document.createElement('div');t.className=`toast toast-${type==='ok'?'ok':type==='err'?'err':'info'}`;t.textContent=msg;c.appendChild(t);setTimeout(()=>t.remove(),3500);}
+</script>
+</body>
+</html>

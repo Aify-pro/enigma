@@ -56,6 +56,7 @@
   <a class="navbar-brand" href="caisse.html">Enigma <span>Escape Game</span></a>
   <a class="nav-link active" href="caisse.html">🎫 Caisse</a>
   <a class="nav-link" href="depenses.html">💸 Dépenses</a>
+  <a class="nav-link" href="planning.html">📅 Planning</a>
   <a class="nav-link hidden" id="nav-rapprochements" href="rapprochements.html">📊 Rapprochements</a>
   <a class="nav-link hidden" id="nav-admin" href="admin.html">⚙️ Admin</a>
   <span id="nav-user" style="font-size:11px;color:var(--text3);margin-left:auto;padding:0 12px;"></span>
@@ -102,6 +103,13 @@
           <label>Salle *</label>
           <select id="sel-room" onchange="onRoomChange()">
             <option value="">— Choisir une salle —</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Type</label>
+          <select id="sel-type">
+            <option value="standard">🎫 Standard</option>
+            <option value="forfait">🎉 Forfait / Événement</option>
           </select>
         </div>
         <div class="field">
@@ -167,6 +175,11 @@
             <div class="field" style="margin:0;"><label>Espèces</label><input type="number" id="pay-cash" min="0" value="0" oninput="updateTotal()" /></div>
             <div class="field" style="margin:0;"><label>Mobile Money</label><input type="number" id="pay-mobile" min="0" value="0" oninput="updateTotal()" /></div>
             <div class="field" style="margin:0;"><label>Bon cadeau</label><input type="number" id="pay-voucher" min="0" value="0" readonly /></div>
+          </div>
+          <div class="payment-split" style="margin-top:8px;">
+            <div class="field" style="margin:0;"><label>Chèque</label><input type="number" id="pay-cheque" min="0" value="0" oninput="updateTotal()" /></div>
+            <div class="field" style="margin:0;"><label>Virement</label><input type="number" id="pay-virement" min="0" value="0" oninput="updateTotal()" /></div>
+            <div class="field" style="margin:0;"><label>Réf. chèque/vir.</label><input type="text" id="pay-ref" placeholder="N° chèque…" /></div>
           </div>
         </div>
 
@@ -307,7 +320,9 @@ function updateTotal(baseOvr, extraOvr) {
   const total    = Math.max(0, base+extra+itemsAmt-discount);
   const cashPay  = parseInt(document.getElementById('pay-cash').value)||0;
   const mobilePay= parseInt(document.getElementById('pay-mobile').value)||0;
-  const paid     = cashPay+mobilePay+voucherP;
+  const chequePay  = parseInt(document.getElementById('pay-cheque').value)||0;
+  const virementPay= parseInt(document.getElementById('pay-virement').value)||0;
+  const paid     = cashPay+mobilePay+voucherP+chequePay+virementPay;
 
   setText('t-session',  fmt(base));
   setText('t-extra',    fmt(extra));
@@ -384,9 +399,13 @@ async function saveSale(doPrint) {
   try {
     const ticketNum=await nextTicketNumber();
     const s=window._sale;
-    const cashPay  =parseInt(document.getElementById('pay-cash').value)||0;
-    const mobilePay=parseInt(document.getElementById('pay-mobile').value)||0;
-    const voucherPay=parseInt(document.getElementById('pay-voucher').value)||0;
+    const cashPay    =parseInt(document.getElementById('pay-cash').value)||0;
+    const mobilePay  =parseInt(document.getElementById('pay-mobile').value)||0;
+    const voucherPay =parseInt(document.getElementById('pay-voucher').value)||0;
+    const chequePay  =parseInt(document.getElementById('pay-cheque').value)||0;
+    const virementPay=parseInt(document.getElementById('pay-virement').value)||0;
+    const payRef     =document.getElementById('pay-ref').value.trim();
+    const ticketType =document.getElementById('sel-type').value;
     const {data:ticket,error:tErr}=await sb.from('tickets').insert([{
       ticket_number:ticketNum,room_id:activeRoom.id,room_name:activeRoom.name,
       session_date:document.getElementById('inp-date').value,
@@ -394,12 +413,19 @@ async function saveSale(doPrint) {
       num_players:parseInt(document.getElementById('inp-players').value),
       base_price_xof:s.base,extra_price_xof:s.extra,discount_xof:s.discount,total_price_xof:s.total,
       payment_especes_xof:cashPay,payment_mobile_xof:mobilePay,payment_voucher_xof:voucherPay,
+      payment_cheque_xof:chequePay,payment_virement_xof:virementPay,
       voucher_id:voucherData?voucherData.id:null,
+      ticket_type:ticketType,
       operator_name:document.getElementById('inp-operator').value.trim(),
       notes:document.getElementById('inp-notes').value.trim(),status:'confirmed',
     }]).select().single();
     if (tErr) throw tErr;
     if (cart.length) await sb.from('ticket_items').insert(cart.map(i=>({ticket_id:ticket.id,product_id:i.product_id,name:i.name,qty:i.qty,unit_price_xof:i.unit_price_xof,total_xof:i.total_xof})));
+    // Créer transactions bancaires pour chèque/virement
+    const bankInserts=[];
+    if(chequePay>0) bankInserts.push({date:ticket.session_date,type:'credit',amount_xof:chequePay,category:'cheque',description:`${ticketType==='forfait'?'Forfait':'Ticket'} ${ticketNum}`,reference:payRef||null,ticket_id:ticket.id,created_by:document.getElementById('inp-operator').value.trim()});
+    if(virementPay>0) bankInserts.push({date:ticket.session_date,type:'credit',amount_xof:virementPay,category:'virement',description:`${ticketType==='forfait'?'Forfait':'Ticket'} ${ticketNum}`,reference:payRef||null,ticket_id:ticket.id,created_by:document.getElementById('inp-operator').value.trim()});
+    if(bankInserts.length) await sb.from('bank_transactions').insert(bankInserts);
     if (voucherData&&voucherPay>0) {
       const nb=voucherData.remaining_amount_xof-voucherPay;
       await sb.from('vouchers').update({remaining_amount_xof:Math.max(0,nb),is_active:nb>0}).eq('id',voucherData.id);
@@ -427,7 +453,7 @@ function validate() {
   if (!document.getElementById('inp-operator').value.trim()) return toast("Nom de l'opérateur requis",'err'),false;
   const s=window._sale;
   if (!s||s.total<=0) return toast('Montant total invalide','err'),false;
-  const paid=(parseInt(document.getElementById('pay-cash').value)||0)+(parseInt(document.getElementById('pay-mobile').value)||0)+(parseInt(document.getElementById('pay-voucher').value)||0);
+  const paid=(parseInt(document.getElementById('pay-cash').value)||0)+(parseInt(document.getElementById('pay-mobile').value)||0)+(parseInt(document.getElementById('pay-voucher').value)||0)+(parseInt(document.getElementById('pay-cheque').value)||0)+(parseInt(document.getElementById('pay-virement').value)||0);
   if (paid<s.total) return toast(`Paiement insuffisant : ${fmt(s.total-paid)} manquant`,'err'),false;
   return true;
 }
@@ -520,6 +546,10 @@ function resetForm() {
   document.getElementById('pay-cash').value='0';
   document.getElementById('pay-mobile').value='0';
   document.getElementById('pay-voucher').value='0';
+  document.getElementById('pay-cheque').value='0';
+  document.getElementById('pay-virement').value='0';
+  document.getElementById('pay-ref').value='';
+  document.getElementById('sel-type').value='standard';
   document.getElementById('price-info').classList.add('hidden');
   document.getElementById('voucher-info').classList.add('hidden');
   activeRoom=null; voucherData=null; cart=[]; pricingMap=[];

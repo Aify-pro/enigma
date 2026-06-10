@@ -6,6 +6,13 @@ const ENIGMA_CONFIG = {
   supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxra2xrY2Vha2ZtdWZndHp6and5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwMjczMTYsImV4cCI6MjA5NjYwMzMxNn0.L-I5xh53vycuAFPr0QsOBAeiIEtG0D1rVIWSGjFvils',
   // La service role key n'est plus nécessaire ici — elle est stockée dans la Edge Function Supabase.
 
+  // ── Planning / Calendrier ──────────────────────────────────
+  // Google Calendar : Settings → Integrate calendar → "Embed code" → copier l'URL src de l'iframe
+  calendarEmbedUrl: '',
+  // ICS feed : Google Calendar → Settings → "Secret/Public address in iCal format"
+  // Ou le lien .ics de votre site officiel
+  calendarIcsUrl:   '',
+
   businessName:   'Enigma Escape Game',
   currency:       'FCFA',
   thermalMm:      80,   // largeur du papier thermique : 58 ou 80
@@ -16,6 +23,7 @@ const ENIGMA_CONFIG = {
     { value: 'fournitures',  label: '📦 Fournitures' },
     { value: 'marketing',    label: '📢 Marketing' },
     { value: 'maintenance',  label: '🔧 Maintenance' },
+    { value: 'banque',       label: '🏦 Dépôt banque' },
     { value: 'autres',       label: '📋 Autres' },
   ],
 };
