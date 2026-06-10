@@ -733,41 +733,82 @@ function validate() {
 // ── Print ticket ──────────────────────────────────────────────
 function buildTicketHTML(ticket, items) {
   const itemsHTML = items.length
-    ? `<hr class="ticket-sep"><div style="font-size:11px;font-weight:bold;margin-bottom:2mm;">ARTICLES</div><div class="ticket-items">${items.map(i=>`<div class="item-row"><span class="item-label">${escHtml(i.name)}</span><span class="item-qty">${i.qty}×</span><span class="item-price">${fmt(i.total_xof)}</span></div>`).join('')}</div>`
+    ? `<hr class="ticket-sep">
+       <div style="font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:.1em;margin-bottom:2mm;color:#444;">Articles</div>
+       <div class="ticket-items">${items.map(i=>`
+         <div class="item-row">
+           <span class="item-label">${escHtml(i.name)}</span>
+           <span class="item-qty">${i.qty}×</span>
+           <span class="item-price">${fmt(i.total_xof)}</span>
+         </div>`).join('')}</div>`
     : '';
-  const extremeHTML  = ticket.extreme_mode_xof>0 ? `<div class="ticket-row"><span class="label">⚡ Mode Extrême</span><span class="value">${fmt(ticket.extreme_mode_xof)}</span></div>` : '';
-  const advanceHTML  = ticket.payment_advance_xof>0 ? `<div class="ticket-row"><span class="label">Avance déduite</span><span class="value">−${fmt(ticket.payment_advance_xof)}</span></div>` : '';
-  const roomLine     = ticket.room_name ? `<div class="ticket-row"><span class="label">Salle</span><span class="value">${escHtml(ticket.room_name)}</span></div>` : `<div class="ticket-row"><span class="label">Type</span><span class="value">Vente articles</span></div>`;
-  const slotLine     = ticket.time_slot ? `<div class="ticket-row"><span class="label">Créneau</span><span class="value">${ticket.time_slot}</span></div>` : '';
-  const playersLine  = ticket.num_players>0 ? `<div class="ticket-row"><span class="label">Joueurs</span><span class="value">${ticket.num_players}</span></div>` : '';
+
+  const hasPriceDetail = ticket.base_price_xof>0 || ticket.extra_price_xof>0
+    || (ticket.extreme_mode_xof||0)>0 || items.length>0 || ticket.discount_xof>0;
+
+  const priceRows = hasPriceDetail ? `
+    <hr class="ticket-sep">
+    ${ticket.base_price_xof>0 ? `<div class="ticket-row"><span class="label">Session</span><span class="value">${fmt(ticket.base_price_xof)}</span></div>` : ''}
+    ${ticket.extra_price_xof>0 ? `<div class="ticket-row"><span class="label">Supplément</span><span class="value">${fmt(ticket.extra_price_xof)}</span></div>` : ''}
+    ${(ticket.extreme_mode_xof||0)>0 ? `<div class="ticket-row"><span class="label">Mode Extreme</span><span class="value">${fmt(ticket.extreme_mode_xof)}</span></div>` : ''}
+    ${itemsHTML}
+    ${ticket.discount_xof>0 ? `<div class="ticket-row"><span class="label">Remise</span><span class="value">- ${fmt(ticket.discount_xof)}</span></div>` : ''}
+    ${(ticket.payment_advance_xof||0)>0 ? `<div class="ticket-row"><span class="label">Avance deduite</span><span class="value">- ${fmt(ticket.payment_advance_xof)}</span></div>` : ''}` : '';
+
+  const payRows = [
+    ticket.payment_especes_xof>0   && ['Especes',     ticket.payment_especes_xof],
+    ticket.payment_mobile_xof>0    && ['Mobile Money',ticket.payment_mobile_xof],
+    ticket.payment_voucher_xof>0   && ['Bon cadeau',  ticket.payment_voucher_xof],
+    ticket.payment_cheque_xof>0    && ['Cheque',      ticket.payment_cheque_xof],
+    ticket.payment_virement_xof>0  && ['Virement',    ticket.payment_virement_xof],
+    (ticket.payment_advance_xof||0)>0 && ['Avance',  ticket.payment_advance_xof],
+  ].filter(Boolean);
+
+  const roomLine    = ticket.room_name
+    ? `<div class="ticket-row"><span class="label">Salle</span><span class="value">${escHtml(ticket.room_name)}</span></div>`
+    : `<div class="ticket-row"><span class="label">Type</span><span class="value">Vente articles</span></div>`;
+  const slotLine    = ticket.time_slot    ? `<div class="ticket-row"><span class="label">Creneau</span><span class="value">${ticket.time_slot}</span></div>` : '';
+  const playersLine = ticket.num_players>0 ? `<div class="ticket-row"><span class="label">Joueurs</span><span class="value">${ticket.num_players} pers.</span></div>` : '';
+  const clientLine  = ticket.client_name  ? `<div class="ticket-row"><span class="label">Client</span><span class="value">${escHtml(ticket.client_name)}</span></div>` : '';
+  const now         = new Date().toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+
   document.getElementById('ticket-content').innerHTML = `
-    <div class="ticket-header"><div class="biz-name">${ENIGMA_CONFIG.businessName}</div><div class="ticket-title">Billet d'entrée</div></div>
+    <div class="ticket-header">
+      <div class="biz-name">${escHtml(ENIGMA_CONFIG.businessName)}</div>
+      <div class="ticket-subtitle">- Billet d'entree -</div>
+    </div>
+
+    <div class="ticket-number-label">N° de billet</div>
     <div class="ticket-number">${ticket.ticket_number}</div>
+
+    <hr class="ticket-sep">
     ${roomLine}
     <div class="ticket-row"><span class="label">Date</span><span class="value">${formatDate(ticket.session_date)}</span></div>
-    ${slotLine}${playersLine}
-    <hr class="ticket-sep">
-    ${ticket.base_price_xof>0?`<div class="ticket-row"><span class="label">Session</span><span class="value">${fmt(ticket.base_price_xof)}</span></div>`:''}
-    ${ticket.extra_price_xof>0?`<div class="ticket-row"><span class="label">Supplément</span><span class="value">${fmt(ticket.extra_price_xof)}</span></div>`:''}
-    ${extremeHTML}
-    ${itemsHTML}
-    ${ticket.discount_xof>0?`<hr class="ticket-sep"><div class="ticket-row"><span class="label">Remise</span><span class="value">−${fmt(ticket.discount_xof)}</span></div>`:''}
-    ${advanceHTML}
-    <hr class="ticket-sep">
-    <div class="ticket-total"><span>TOTAL</span><span>${fmt(ticket.total_price_xof)}</span></div>
-    <div class="ticket-payments">
-      ${ticket.payment_especes_xof>0?`<div class="pay-row"><span>Espèces</span><span>${fmt(ticket.payment_especes_xof)}</span></div>`:''}
-      ${ticket.payment_mobile_xof>0?`<div class="pay-row"><span>Mobile Money</span><span>${fmt(ticket.payment_mobile_xof)}</span></div>`:''}
-      ${ticket.payment_voucher_xof>0?`<div class="pay-row"><span>Bon cadeau</span><span>${fmt(ticket.payment_voucher_xof)}</span></div>`:''}
-      ${ticket.payment_cheque_xof>0?`<div class="pay-row"><span>Chèque</span><span>${fmt(ticket.payment_cheque_xof)}</span></div>`:''}
-      ${ticket.payment_virement_xof>0?`<div class="pay-row"><span>Virement</span><span>${fmt(ticket.payment_virement_xof)}</span></div>`:''}
-      ${ticket.payment_advance_xof>0?`<div class="pay-row"><span>Avance</span><span>${fmt(ticket.payment_advance_xof)}</span></div>`:''}
+    ${slotLine}
+    ${playersLine}
+    ${clientLine}
+
+    ${priceRows}
+
+    <div class="ticket-total-box">
+      <div class="total-label">Total a regler</div>
+      <div class="total-amount">${fmt(ticket.total_price_xof)}</div>
     </div>
-    <hr class="ticket-sep">
-    ${ticket.client_name?`<div class="ticket-row"><span class="label">Client</span><span class="value">${escHtml(ticket.client_name)}</span></div>`:''}
-    <div class="ticket-row"><span class="label">Émis par</span><span class="value">${escHtml(ticket.operator_name)}</span></div>
-    <div class="ticket-row"><span class="label">Émis le</span><span class="value">${new Date().toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</span></div>
-    <div class="ticket-footer"><div class="thanks">Merci et bonne aventure !</div>${ticket.notes?`<div style="margin-top:1mm;font-style:italic;">${escHtml(ticket.notes)}</div>`:''}</div>`;
+
+    ${payRows.length ? `
+    <div class="ticket-payments">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#444;margin-bottom:1.5mm;">Reglement</div>
+      ${payRows.map(([l,v])=>`<div class="pay-row"><span class="pay-label">${l}</span><span>${fmt(v)}</span></div>`).join('')}
+    </div>` : ''}
+
+    <div class="ticket-footer">
+      <div class="thanks">Merci et bonne aventure !</div>
+      ${ticket.notes ? `<div class="ticket-note">${escHtml(ticket.notes)}</div>` : ''}
+      <div class="ticket-meta">
+        Emis par ${escHtml(ticket.operator_name)}<br>
+        Le ${now}
+      </div>
+    </div>`;
 }
 
 // ── Daily Report ──────────────────────────────────────────────
@@ -810,28 +851,43 @@ async function openDailyReport() {
     : '<div style="font-size:9px;color:#555;">Aucun article</div>';
   const advHTML = advToday.map(a=>`<div class="report-total-row"><span>${escHtml(a.client_name)} (${escHtml(a.payment_method)})</span><span${a.status==='penalty'?' style="color:#ef4444;"':''}>${a.status==='penalty'?'Pénalité':fmt(a.amount_xof)}</span></div>`).join('');
   document.getElementById('report-content').innerHTML=`
-    <div class="report-header"><div class="biz-name">${ENIGMA_CONFIG.businessName}</div><div class="report-title">Rapport de journée</div><div class="report-date">${formatDate(date)} — ${tickets.length} session(s)</div></div>
+    <div class="report-header">
+      <div class="biz-name">${escHtml(ENIGMA_CONFIG.businessName)}</div>
+      <div class="report-title">Rapport de journee</div>
+      <div class="report-date">${formatDate(date)} &mdash; ${tickets.length} session(s)</div>
+    </div>
+
     <div class="report-section-title">Sessions</div>
-    <div class="report-session-row" style="font-size:8px;font-weight:bold;border-bottom:1px solid #000;margin-bottom:2mm;"><span class="col-time">Heure</span><span class="col-room">Salle</span><span class="col-pax">Jrs</span><span class="col-total">Total</span></div>
+    <div class="report-session-row" style="font-size:10px;font-weight:bold;border-bottom:2px solid #000;padding-bottom:1.5mm;margin-bottom:1mm;">
+      <span class="col-time">Heure</span><span class="col-room">Salle</span><span class="col-pax">Jrs</span><span class="col-total">Total</span>
+    </div>
     ${sessHTML}
+
     <div class="report-section-title">Articles vendus</div>
-    <div class="report-item-row" style="font-size:8px;font-weight:bold;border-bottom:1px solid #000;margin-bottom:2mm;"><span class="col-name">Article</span><span class="col-qty">Qté</span><span class="col-total">Total</span></div>
+    <div class="report-item-row" style="font-size:10px;font-weight:bold;border-bottom:2px solid #000;padding-bottom:1.5mm;margin-bottom:1mm;">
+      <span class="col-name">Article</span><span class="col-qty">Qte</span><span class="col-total">Total</span>
+    </div>
     ${itemsHTML}
-    ${advToday.length?`<div class="report-section-title">Avances reçues</div>${advHTML}`:''}
-    <div class="report-section-title">Récapitulatif</div>
+
+    ${advToday.length ? `<div class="report-section-title">Avances recues</div>${advHTML}` : ''}
+
+    <div class="report-section-title">Recapitulatif</div>
     <div class="report-totals">
       <div class="report-total-row"><span>Sessions</span><span>${fmt(totalRevenue)}</span></div>
-      ${totalItems>0?`<div class="report-total-row"><span>Articles</span><span>${fmt(totalItems)}</span></div>`:''}
+      ${totalItems>0 ? `<div class="report-total-row"><span>Articles</span><span>${fmt(totalItems)}</span></div>` : ''}
       <div class="report-total-row grand"><span>TOTAL JOUR</span><span>${fmt(totalRevenue)}</span></div>
-      <div style="height:2mm;"></div>
-      ${totalCash>0?`<div class="report-total-row"><span>dont Espèces</span><span>${fmt(totalCash)}</span></div>`:''}
-      ${totalMobile>0?`<div class="report-total-row"><span>dont Mobile Money</span><span>${fmt(totalMobile)}</span></div>`:''}
-      ${totalVoucher>0?`<div class="report-total-row"><span>dont Bons cadeaux</span><span>${fmt(totalVoucher)}</span></div>`:''}
-      ${totalCheque>0?`<div class="report-total-row"><span>dont Chèques</span><span>${fmt(totalCheque)}</span></div>`:''}
-      ${totalVirement>0?`<div class="report-total-row"><span>dont Virements</span><span>${fmt(totalVirement)}</span></div>`:''}
-      ${totalAdvances>0?`<div class="report-total-row"><span>Avances reçues</span><span>${fmt(totalAdvances)}</span></div>`:''}
+      ${totalCash>0     ? `<div class="report-total-row"><span>Especes</span><span>${fmt(totalCash)}</span></div>` : ''}
+      ${totalMobile>0   ? `<div class="report-total-row"><span>Mobile Money</span><span>${fmt(totalMobile)}</span></div>` : ''}
+      ${totalVoucher>0  ? `<div class="report-total-row"><span>Bons cadeaux</span><span>${fmt(totalVoucher)}</span></div>` : ''}
+      ${totalCheque>0   ? `<div class="report-total-row"><span>Cheques</span><span>${fmt(totalCheque)}</span></div>` : ''}
+      ${totalVirement>0 ? `<div class="report-total-row"><span>Virements</span><span>${fmt(totalVirement)}</span></div>` : ''}
+      ${totalAdvances>0 ? `<div class="report-total-row"><span>Avances recues</span><span>${fmt(totalAdvances)}</span></div>` : ''}
     </div>
-    <div class="report-footer">Imprimé le ${new Date().toLocaleString('fr-FR')}<br>${ENIGMA_CONFIG.businessName}</div>`;
+
+    <div class="report-footer">
+      Imprime le ${new Date().toLocaleString('fr-FR')}<br>
+      ${escHtml(ENIGMA_CONFIG.businessName)}
+    </div>`;
   document.body.classList.add('print-report'); window.print(); document.body.classList.remove('print-report');
 }
 
