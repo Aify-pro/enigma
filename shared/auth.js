@@ -1,3 +1,10 @@
+// Masquer immédiatement le contenu des pages protégées
+// pour éviter le flash avant la vérification de session.
+// (Ne s'applique pas à login.html ni index.html)
+if (!window.location.pathname.match(/login|index/)) {
+  document.documentElement.style.visibility = 'hidden';
+}
+
 // ── Client Supabase partagé ───────────────────────────────────
 const sb = supabase.createClient(
   ENIGMA_CONFIG.supabaseUrl,
@@ -16,7 +23,8 @@ async function requireAuth() {
   }
   currentUser = {
     email:        session.user.email,
-    role:         (session.user.user_metadata?.role || 'staff').toLowerCase(),
+    // Rôle lu depuis app_metadata uniquement — non modifiable par l'utilisateur
+    role:         (session.user.app_metadata?.role || 'staff').toLowerCase(),
     display_name: session.user.user_metadata?.display_name || session.user.email.split('@')[0],
   };
   // Afficher le nom dans la nav

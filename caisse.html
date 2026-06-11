@@ -128,7 +128,7 @@
         </div>
         <div class="field">
           <label>Type</label>
-          <select id="sel-type">
+          <select id="sel-type" onchange="onTypeChange()">
             <option value="standard">🎫 Standard</option>
             <option value="forfait">🎉 Forfait / Événement</option>
           </select>
@@ -146,6 +146,14 @@
         <div class="field">
           <label>Nb joueurs</label>
           <input type="number" id="inp-players" min="1" max="30" value="2" oninput="calcPrice()" />
+        </div>
+      </div>
+      <!-- Prix forfaitaire — visible uniquement en mode Forfait -->
+      <div id="forfait-price-row" class="hidden" style="margin-bottom:8px;">
+        <div class="field" style="margin:0;">
+          <label>Prix forfaitaire (FCFA) *</label>
+          <input type="number" id="inp-forfait-price" min="0" placeholder="Ex : 150 000"
+                 oninput="onForfaitPriceChange()" />
         </div>
       </div>
       <div id="price-info" class="info-banner hidden"></div>
@@ -325,6 +333,23 @@ function toggleArticleOnly() {
   }
 }
 
+// ── Type de ticket (standard / forfait) ──────────────────────
+function onTypeChange() {
+  const isForfait = document.getElementById('sel-type').value === 'forfait';
+  document.getElementById('forfait-price-row').classList.toggle('hidden', !isForfait);
+  if (!isForfait) {
+    document.getElementById('inp-forfait-price').value = '';
+    calcPrice();
+  } else {
+    onForfaitPriceChange();
+  }
+}
+
+function onForfaitPriceChange() {
+  const val = parseInt(document.getElementById('inp-forfait-price').value) || 0;
+  updateTotal(val, 0);
+}
+
 // ── Mode extrême ──────────────────────────────────────────────
 function toggleExtremeMode() {
   if (!activeRoom?.has_extreme_mode) return;
@@ -410,6 +435,7 @@ async function onRoomChange() {
 // ── Pricing ───────────────────────────────────────────────────
 function calcPrice() {
   if (!activeRoom || articleOnlyMode) { updateTotal(0,0); return; }
+  if (document.getElementById('sel-type').value === 'forfait') { onForfaitPriceChange(); return; }
   const n=parseInt(document.getElementById('inp-players').value)||0;
   const minP=activeRoom.min_players, maxP=activeRoom.max_players, extraPP=activeRoom.extra_player_price_xof||0;
   let base=0, extra=0, info='';
@@ -466,6 +492,9 @@ function updateTotal(baseOvr, extraOvr) {
 }
 function _deriveBase() {
   if (!activeRoom || articleOnlyMode) return 0;
+  if (document.getElementById('sel-type').value === 'forfait') {
+    return parseInt(document.getElementById('inp-forfait-price').value) || 0;
+  }
   const n=parseInt(document.getElementById('inp-players').value)||0;
   if (pricingMap[n]!==undefined) return pricingMap[n];
   const keys=Object.keys(pricingMap).map(Number).filter(k=>k<=n).sort((a,b)=>b-a);
@@ -714,6 +743,10 @@ function validate() {
   if (!articleOnlyMode) {
     if (!document.getElementById('sel-room').value) return toast('Choisir une salle','err'),false;
     if (!document.getElementById('sel-slot').value) return toast('Choisir un créneau','err'),false;
+    if (document.getElementById('sel-type').value === 'forfait') {
+      const fp = parseInt(document.getElementById('inp-forfait-price').value)||0;
+      if (!fp) return toast('Saisir le prix forfaitaire','err'),false;
+    }
   } else {
     if (!cart.length) return toast('Ajouter au moins un article','err'),false;
   }
@@ -908,6 +941,8 @@ function resetForm() {
   document.getElementById('pay-virement').value='0';
   document.getElementById('pay-ref').value='';
   document.getElementById('sel-type').value='standard';
+  document.getElementById('forfait-price-row').classList.add('hidden');
+  document.getElementById('inp-forfait-price').value='';
   document.getElementById('price-info').classList.add('hidden');
   document.getElementById('voucher-info').classList.add('hidden');
   document.getElementById('advance-pay-info').classList.add('hidden');

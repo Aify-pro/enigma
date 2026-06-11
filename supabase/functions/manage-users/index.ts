@@ -21,7 +21,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Vérifie que le token est valide et que l'utilisateur est admin
+    // Vérifie le token JWT de l'appelant
     const supabaseUser = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_ANON_KEY")!,
@@ -36,7 +36,8 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const role = (user.user_metadata?.role || "staff").toLowerCase();
+    // Vérification du rôle dans app_metadata UNIQUEMENT (non modifiable par l'utilisateur)
+    const role = (user.app_metadata?.role || "staff").toLowerCase();
     if (role !== "admin") {
       return new Response(JSON.stringify({ error: "Accès refusé — rôle admin requis" }), {
         status: 403,
@@ -44,7 +45,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Client admin avec la service role key — stockée côté serveur, jamais exposée
+    // Client admin — service role key stockée côté serveur uniquement
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -59,24 +60,35 @@ Deno.serve(async (req: Request) => {
       case "list":
         result = await supabaseAdmin.auth.admin.listUsers();
         break;
-      case "create":
+
+      case "create": {
+        // Sépare le rôle (→ app_metadata) des autres infos (→ user_metadata)
+        const { role: newRole, ...otherMeta } = payload.user_metadata || {};
         result = await supabaseAdmin.auth.admin.createUser({
           email: payload.email,
           password: payload.password,
-          user_metadata: payload.user_metadata,
+          user_metadata: otherMeta,           // display_name, avatar_url
+          app_metadata:  { role: newRole || "staff" }, // rôle sécurisé
           email_confirm: true,
         });
         break;
-      case "update":
-        result = await supabaseAdmin.auth.admin.updateUserById(payload.id, {
-          user_metadata: payload.user_metadata,
-        });
+      }
+
+      case "update": {
+        // Sépare le rôle des autres métadonnées
+        const { role: updRole, ...otherMeta } = payload.user_metadata || {};
+        const updatePayload: Record<string, any> = { user_metadata: otherMeta };
+        if (updRole !== undefined) updatePayload.app_metadata = { role: updRole };
+        result = await supabaseAdmin.auth.admin.updateUserById(payload.id, updatePayload);
         break;
+      }
+
       case "update_password":
         result = await supabaseAdmin.auth.admin.updateUserById(payload.id, {
           password: payload.password,
         });
         break;
+
       case "delete":
         if (payload.id === user.id) {
           return new Response(JSON.stringify({ error: "Impossible de supprimer votre propre compte" }), {
@@ -86,6 +98,7 @@ Deno.serve(async (req: Request) => {
         }
         result = await supabaseAdmin.auth.admin.deleteUser(payload.id);
         break;
+
       default:
         return new Response(JSON.stringify({ error: "Action inconnue : " + action }), {
           status: 400,
