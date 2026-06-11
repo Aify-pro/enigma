@@ -27,6 +27,7 @@ async function requireAuth() {
     role:         (session.user.app_metadata?.role || 'staff').toLowerCase(),
     display_name: session.user.user_metadata?.display_name || session.user.email.split('@')[0],
   };
+  document.documentElement.style.visibility = 'visible';
   // Afficher le nom dans la nav
   const navUser = document.getElementById('nav-user');
   if (navUser) navUser.textContent = currentUser.display_name;
