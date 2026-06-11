@@ -1173,7 +1173,7 @@ function renderUsers() {
   }
   el.innerHTML = usersList.map(u => {
     const name   = u.user_metadata?.display_name || '';
-    const role   = (u.user_metadata?.role || 'staff').toLowerCase();
+    const role   = (u.app_metadata?.role || 'staff').toLowerCase();
     const colors = avatarColors(name || u.email);
     const initials = avatarInitials(name || u.email);
     const avatarUrl = u.user_metadata?.avatar_url || '';
@@ -1205,7 +1205,7 @@ function editUser(id) {
   document.getElementById('user-email').value      = u.email;
   document.getElementById('user-pass').value       = '';
   document.getElementById('user-avatar-url').value = u.user_metadata?.avatar_url || '';
-  setRole((u.user_metadata?.role || 'staff').toLowerCase());
+  setRole((u.app_metadata?.role || 'staff').toLowerCase());
   document.getElementById('user-pass-section').style.display = 'none';
   document.getElementById('user-form-title').textContent     = 'Modifier l\'utilisateur';
   document.getElementById('user-save-btn').textContent       = 'Mettre à jour';
@@ -1352,6 +1352,12 @@ function updateAvatarPreview() {
 // ── Helpers ───────────────────────────────────────────────────
 function fmt(n) { return Number(n||0).toLocaleString('fr-FR') + ' ' + CURRENCY; }
 function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function formatDate(d) {
+  if (!d) return '';
+  const [y, m, day] = d.split('-');
+  const months = ['jan.','fév.','mars','avr.','mai','juin','juil.','août','sep.','oct.','nov.','déc.'];
+  return `${parseInt(day)} ${months[parseInt(m)-1]} ${y}`;
+}
 function toast(msg, type='info') {
   const c=document.getElementById('toast-container');
   const t=document.createElement('div');
