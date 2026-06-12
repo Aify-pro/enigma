@@ -417,11 +417,15 @@
 
   <!-- ── Banque ─────────────────────────────────────────────────── -->
   <div id="tab-banque" class="tab-panel">
+
+    <!-- KPI banque -->
+    <div id="bank-kpis" class="kpi-grid" style="max-width:900px;"></div>
+
     <div style="display:grid;grid-template-columns:340px 1fr;gap:16px;align-items:start;">
 
-      <!-- Formulaire ajout transaction -->
+      <!-- Mouvement manuel -->
       <div class="card">
-        <div class="card-title" id="bank-form-title">Nouvelle transaction</div>
+        <div class="card-title" id="bank-form-title">✏️ Mouvement manuel</div>
         <input type="hidden" id="bank-id" />
         <div class="field">
           <label>Type *</label>
@@ -987,16 +991,15 @@ function closeRegDrawer() {
   document.getElementById('reg-drawer').classList.remove('open');
 }
 
-function renderKPIs({ cumul, totalEspeces, totalSorties, totMob, totChq, totVir, totBon, totalDepenses, totalBankDebits }) {
-  const soldeColor = cumul >= 0 ? 'var(--green)' : 'var(--red)';
-  const nonEsp = totMob + totChq + totVir + totBon;
+function renderKPIs({ soldeCaisse, soldeMM, totalDepTotal, totalDepEsp, totalDepMM }) {
+  const soldeTotal = soldeCaisse + soldeMM;
   const kpis = [
-    { label: 'Solde caisse',         value: fmt(cumul),           color: soldeColor,        border: soldeColor },
-    { label: 'Espèces encaissées',   value: fmt(totalEspeces),    color: 'var(--green)',    border: 'var(--green)' },
-    { label: 'Mobile Money',          value: fmt(totMob),          color: 'var(--cyan)',     border: 'var(--cyan)' },
-    { label: 'Autres règlements',    value: fmt(totChq+totVir+totBon), color: 'var(--text2)', border: 'var(--border2)' },
-    { label: 'Dépenses',             value: fmt(totalDepenses),   color: 'var(--red)',      border: 'var(--red)' },
-    { label: 'Dépôts banque',        value: fmt(totalBankDebits), color: 'var(--text2)',    border: 'var(--border2)' },
+    { label: 'Solde total',        value: fmt(soldeTotal),    color: soldeTotal  >= 0 ? 'var(--green)' : 'var(--red)', border: 'var(--purple)' },
+    { label: 'Solde caisse',       value: fmt(soldeCaisse),   color: soldeCaisse >= 0 ? 'var(--green)' : 'var(--red)', border: 'var(--green)'  },
+    { label: 'Solde Mobile Money', value: fmt(soldeMM),       color: soldeMM     >= 0 ? 'var(--cyan)'  : 'var(--red)', border: 'var(--cyan)'   },
+    { label: 'Dépenses total',     value: fmt(totalDepTotal), color: 'var(--red)',    border: 'var(--red)'    },
+    { label: 'Dépenses espèces',   value: fmt(totalDepEsp),   color: 'var(--text2)',  border: 'var(--border2)'},
+    { label: 'Dépenses Mobile M.', value: fmt(totalDepMM),    color: 'var(--text2)',  border: 'var(--border2)'},
   ];
   document.getElementById('caisse-kpis').innerHTML = kpis.map(k => `
     <div class="kpi-card" style="border-left-color:${k.border};">
@@ -1021,7 +1024,7 @@ async function loadCaisse() {
   const [tRes, eRes, bRes, rRes] = await Promise.all([
     sb.from('tickets').select('session_date,total_price_xof,payment_especes_xof,payment_mobile_xof,payment_voucher_xof,payment_cheque_xof,payment_virement_xof,ticket_number,room_name,time_slot,num_players')
       .gte('session_date', from).lte('session_date', to).eq('status','confirmed').order('session_date'),
-    sb.from('expenses').select('date,amount_xof,category,description,status,operator_name')
+    sb.from('expenses').select('date,amount_xof,category,description,status,operator_name,payment_method')
       .gte('date', from).lte('date', to).neq('status','rejected').order('date'),
     sb.from('bank_transactions').select('date,type,amount_xof,category,description')
       .gte('date', from).lte('date', to).order('date'),
@@ -1044,24 +1047,30 @@ async function loadCaisse() {
         .forEach(b      => { addDay(b.date); days[b.date].bankDebits.push(b); });
   regulations.forEach(r => { addDay(r.date); days[r.date].regulations.push(r); });
 
+  // Agrégats dépenses par moyen de paiement (sur tout le mois)
+  const totalDepEsp   = expenses.filter(e => !e.payment_method || e.payment_method === 'especes').reduce((s,e) => s + (e.amount_xof||0), 0);
+  const totalDepMM    = expenses.filter(e => e.payment_method === 'mobile_money').reduce((s,e) => s + (e.amount_xof||0), 0);
+  const totalDepTotal = expenses.reduce((s,e) => s + (e.amount_xof||0), 0);
+
   const sorted = Object.keys(days).sort();
   let cumul = 0;
   let totalEntrees = 0, totalSorties = 0;
-  let totalEspeces = 0, totalDepenses = 0, totalBankDebits = 0;
+  let totalBankDebits = 0;
 
   const rows = sorted.map(date => {
     const d = days[date];
-    const especes   = d.tickets.reduce((s,t) => s + (t.payment_especes_xof||0), 0);
-    const regCredit = d.regulations.filter(r => r.direction === 'credit').reduce((s,r) => s + (r.amount_xof||0), 0);
-    const regDebit  = d.regulations.filter(r => r.direction === 'debit').reduce((s,r)  => s + (r.amount_xof||0), 0);
-    const dayDep    = d.expenses.reduce((s,e) => s + (e.amount_xof||0), 0);
-    const dayBank   = d.bankDebits.reduce((s,b) => s + (b.amount_xof||0), 0);
-    const entrees   = especes + regCredit;
-    const sorties   = dayDep + dayBank + regDebit;
-    const soldeJour = entrees - sorties;
+    const especes    = d.tickets.reduce((s,t) => s + (t.payment_especes_xof||0), 0);
+    const regCredit  = d.regulations.filter(r => r.direction === 'credit').reduce((s,r) => s + (r.amount_xof||0), 0);
+    const regDebit   = d.regulations.filter(r => r.direction === 'debit').reduce((s,r)  => s + (r.amount_xof||0), 0);
+    // Seules les dépenses espèces sortent de la caisse
+    const dayDepEsp  = d.expenses.filter(e => !e.payment_method || e.payment_method === 'especes').reduce((s,e) => s + (e.amount_xof||0), 0);
+    const dayBank    = d.bankDebits.reduce((s,b) => s + (b.amount_xof||0), 0);
+    const entrees    = especes + regCredit;
+    const sorties    = dayDepEsp + dayBank + regDebit;
+    const soldeJour  = entrees - sorties;
     cumul += soldeJour;
     totalEntrees += entrees; totalSorties += sorties;
-    totalEspeces += especes; totalDepenses += dayDep; totalBankDebits += dayBank;
+    totalBankDebits += dayBank;
     const cumulColor = cumul >= 0 ? 'var(--green)' : 'var(--red)';
     const jourColor  = soldeJour >= 0 ? 'var(--green)' : 'var(--red)';
     const hasReg     = d.regulations.length > 0;
@@ -1139,7 +1148,8 @@ async function loadCaisse() {
   }
 
   // ── KPI cards ─────────────────────────────────────────────────
-  renderKPIs({ cumul, totalEspeces, totalSorties, totMob, totChq, totVir, totBon, totalDepenses, totalBankDebits });
+  const soldeMM = totMob - totalDepMM;
+  renderKPIs({ soldeCaisse: cumul, soldeMM, totalDepTotal, totalDepEsp, totalDepMM });
 
   renderRegList(regulations);
   window._caisseData = { tickets, expenses, bankTx, regulations };
@@ -1327,11 +1337,28 @@ async function loadBank() {
   renderBank();
 }
 
+function renderBankKPIs(totalCredit, totalDebit) {
+  const solde = totalCredit - totalDebit;
+  const kpis = [
+    { label: 'Solde bancaire', value: fmt(solde),        color: solde >= 0 ? 'var(--green)' : 'var(--red)', border: solde >= 0 ? 'var(--green)' : 'var(--red)' },
+    { label: 'Crédits',        value: fmt(totalCredit),  color: 'var(--green)',  border: 'var(--green)'  },
+    { label: 'Débits',         value: fmt(totalDebit),   color: 'var(--red)',    border: 'var(--red)'    },
+    { label: 'Transactions',   value: bankTxList.length, color: 'var(--text2)',  border: 'var(--border2)'},
+  ];
+  const el = document.getElementById('bank-kpis');
+  if (el) el.innerHTML = kpis.map(k => `
+    <div class="kpi-card" style="border-left-color:${k.border};">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-value" style="color:${k.color};">${k.value}</div>
+    </div>`).join('');
+}
+
 function renderBank() {
   const tbody = document.getElementById('bank-body');
   if (!bankTxList.length) {
     tbody.innerHTML = '<tr><td colspan="7" class="text-muted" style="text-align:center;padding:20px;">Aucune transaction ce mois</td></tr>';
     document.getElementById('bank-solde').innerHTML = '';
+    renderBankKPIs(0, 0);
     return;
   }
   let totalCredit = 0, totalDebit = 0;
@@ -1351,13 +1378,14 @@ function renderBank() {
       </td>
     </tr>`;
   }).join('');
+  renderBankKPIs(totalCredit, totalDebit);
   const solde = totalCredit - totalDebit;
   const soldeColor = solde >= 0 ? 'var(--green)' : 'var(--red)';
   document.getElementById('bank-solde').innerHTML = `
     <div style="display:flex;gap:20px;flex-wrap:wrap;padding:10px 14px;background:var(--bg3);border-radius:8px;">
-      <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);">Crédits</div><div style="font-size:16px;font-weight:700;color:var(--green);">${fmt(totalCredit)}</div></div>
-      <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);">Débits</div><div style="font-size:16px;font-weight:700;color:var(--red);">${fmt(totalDebit)}</div></div>
-      <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);">Solde du mois</div><div style="font-size:20px;font-weight:700;color:${soldeColor};">${fmt(solde)}</div></div>
+      <div><div class="kpi-label">Crédits</div><div style="font-size:15px;font-weight:700;color:var(--green);">${fmt(totalCredit)}</div></div>
+      <div><div class="kpi-label">Débits</div><div style="font-size:15px;font-weight:700;color:var(--red);">${fmt(totalDebit)}</div></div>
+      <div><div class="kpi-label">Solde du mois</div><div style="font-size:18px;font-weight:700;color:${soldeColor};">${fmt(solde)}</div></div>
     </div>`;
 }
 

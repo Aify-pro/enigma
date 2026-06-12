@@ -43,6 +43,15 @@
       <div class="field"><label>Montant (FCFA) *</label><input type="number" id="inp-amount" min="1" placeholder="0" /></div>
       <div class="field"><label>Catégorie *</label><select id="inp-cat"></select></div>
       <div class="field"><label>Description</label><textarea id="inp-desc" rows="2" placeholder="Détails de la dépense…"></textarea></div>
+      <div class="field">
+        <label>Moyen de paiement *</label>
+        <select id="inp-payment">
+          <option value="especes">💵 Espèces</option>
+          <option value="mobile_money">📱 Mobile Money</option>
+          <option value="cheque">📄 Chèque</option>
+          <option value="virement">💸 Virement</option>
+        </select>
+      </div>
       <div class="field"><label>Référence reçu</label><input type="text" id="inp-ref" placeholder="N° facture, reçu…" /></div>
       <div class="field"><label>Votre prénom *</label><input type="text" id="inp-op" placeholder="Prénom" /></div>
       <button class="btn btn-primary btn-full" onclick="addExpense()">+ Soumettre la dépense</button>
@@ -57,7 +66,7 @@
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>Date</th><th>Catégorie</th><th>Description</th><th>Montant</th><th>Par</th></tr>
+            <tr><th>Date</th><th>Catégorie</th><th>Description</th><th>Règlement</th><th>Montant</th><th>Par</th></tr>
           </thead>
           <tbody id="staff-body">
             <tr><td colspan="5" class="text-muted" style="text-align:center;padding:20px;">Chargement…</td></tr>
@@ -79,7 +88,7 @@
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Date</th><th>Catégorie</th><th>Description</th><th>Montant</th><th>Opérateur</th><th>Statut</th><th>Actions</th></tr>
+              <tr><th>Date</th><th>Catégorie</th><th>Description</th><th>Règlement</th><th>Montant</th><th>Opérateur</th><th>Statut</th><th>Actions</th></tr>
             </thead>
             <tbody id="admin-body">
               <tr><td colspan="7" class="text-muted" style="text-align:center;padding:20px;">Chargement…</td></tr>
@@ -98,6 +107,7 @@
 <script src="shared/auth.js"></script>
 <script>
 const CURRENCY = ENIGMA_CONFIG.currency;
+const PAY_LABELS = { especes:'💵 Espèces', mobile_money:'📱 Mobile', cheque:'📄 Chèque', virement:'💸 Virement' };
 
 window.addEventListener('load', async () => {
   try { await requireAuth(); } catch(e) { return; }
@@ -137,6 +147,7 @@ async function loadExpensesStaff() {
       <td>${formatDate(e.date)}</td>
       <td>${cat ? cat.label : e.category}</td>
       <td>${escHtml(e.description)}</td>
+      <td style="font-size:12px;white-space:nowrap;">${PAY_LABELS[e.payment_method]||'💵 Espèces'}</td>
       <td style="font-weight:600;">${fmt(e.amount_xof)}</td>
       <td>${escHtml(e.operator_name)}</td>
     </tr>`;
@@ -172,6 +183,7 @@ async function loadExpensesAdmin() {
       <td>${formatDate(e.date)}</td>
       <td>${cat?cat.label:e.category}</td>
       <td>${escHtml(e.description)}<br><span style="font-size:10px;color:var(--text3);">${escHtml(e.receipt_ref)}</span></td>
+      <td style="font-size:12px;white-space:nowrap;">${PAY_LABELS[e.payment_method]||'💵 Espèces'}</td>
       <td style="font-weight:600;">${fmt(e.amount_xof)}</td>
       <td>${escHtml(e.operator_name)}</td>
       <td class="${sCls}">${sLabel}${vInfo}</td>
@@ -207,16 +219,19 @@ async function addExpense() {
   if (!date)   return toast('Date requise','err');
   if (!amount) return toast('Montant requis','err');
   if (!op)     return toast('Votre prénom est requis','err');
+  const payMethod = document.getElementById('inp-payment').value;
   const { error } = await sb.from('expenses').insert([{
     date, amount_xof:amount, category:cat,
     description:desc, receipt_ref:ref,
     operator_name:op, status:'pending',
+    payment_method: payMethod,
   }]);
   if (error) return toast('Erreur enregistrement','err');
   toast('Demande soumise — en attente de validation','ok');
   document.getElementById('inp-amount').value='';
   document.getElementById('inp-desc').value='';
   document.getElementById('inp-ref').value='';
+  document.getElementById('inp-payment').value='especes';
   isAdmin() ? loadExpensesAdmin() : loadExpensesStaff();
 }
 
