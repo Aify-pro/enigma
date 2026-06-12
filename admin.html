@@ -991,15 +991,15 @@ function closeRegDrawer() {
   document.getElementById('reg-drawer').classList.remove('open');
 }
 
-function renderKPIs({ soldeCaisse, soldeMM, totalDepTotal, totalDepEsp, totalDepMM }) {
-  const soldeTotal = soldeCaisse + soldeMM;
+function renderKPIs({ soldeCaisse, soldeMM, totalEspeces, totMob, totalDepTotal, totalDepEsp, totalDepMM }) {
+  // Solde total = (espèces encaissées + MM encaissé) − toutes dépenses
+  const soldeTotal = (totalEspeces + totMob) - totalDepTotal;
   const kpis = [
-    { label: 'Solde total',        value: fmt(soldeTotal),    color: soldeTotal  >= 0 ? 'var(--green)' : 'var(--red)', border: 'var(--purple)' },
-    { label: 'Solde caisse',       value: fmt(soldeCaisse),   color: soldeCaisse >= 0 ? 'var(--green)' : 'var(--red)', border: 'var(--green)'  },
-    { label: 'Solde Mobile Money', value: fmt(soldeMM),       color: soldeMM     >= 0 ? 'var(--cyan)'  : 'var(--red)', border: 'var(--cyan)'   },
-    { label: 'Dépenses total',     value: fmt(totalDepTotal), color: 'var(--red)',    border: 'var(--red)'    },
-    { label: 'Dépenses espèces',   value: fmt(totalDepEsp),   color: 'var(--text2)',  border: 'var(--border2)'},
-    { label: 'Dépenses Mobile M.', value: fmt(totalDepMM),    color: 'var(--text2)',  border: 'var(--border2)'},
+    { label: 'Solde total',        value: fmt(soldeTotal),  color: 'var(--yellow)', border: 'var(--yellow)' },
+    { label: 'Solde caisse',       value: fmt(soldeCaisse), color: soldeCaisse >= 0 ? 'var(--green)' : 'var(--red)', border: 'var(--green)' },
+    { label: 'Solde Mobile Money', value: fmt(soldeMM),     color: soldeMM     >= 0 ? 'var(--cyan)'  : 'var(--red)', border: 'var(--cyan)'  },
+    { label: 'Dépenses espèces',   value: fmt(totalDepEsp), color: 'var(--red)',    border: 'var(--red)'    },
+    { label: 'Dépenses Mobile M.', value: fmt(totalDepMM),  color: 'var(--red)',    border: 'var(--border2)'},
   ];
   document.getElementById('caisse-kpis').innerHTML = kpis.map(k => `
     <div class="kpi-card" style="border-left-color:${k.border};">
@@ -1055,7 +1055,7 @@ async function loadCaisse() {
   const sorted = Object.keys(days).sort();
   let cumul = 0;
   let totalEntrees = 0, totalSorties = 0;
-  let totalBankDebits = 0;
+  let totalEspeces = 0, totalBankDebits = 0;
 
   const rows = sorted.map(date => {
     const d = days[date];
@@ -1070,7 +1070,7 @@ async function loadCaisse() {
     const soldeJour  = entrees - sorties;
     cumul += soldeJour;
     totalEntrees += entrees; totalSorties += sorties;
-    totalBankDebits += dayBank;
+    totalEspeces += especes; totalBankDebits += dayBank;
     const cumulColor = cumul >= 0 ? 'var(--green)' : 'var(--red)';
     const jourColor  = soldeJour >= 0 ? 'var(--green)' : 'var(--red)';
     const hasReg     = d.regulations.length > 0;
@@ -1149,7 +1149,7 @@ async function loadCaisse() {
 
   // ── KPI cards ─────────────────────────────────────────────────
   const soldeMM = totMob - totalDepMM;
-  renderKPIs({ soldeCaisse: cumul, soldeMM, totalDepTotal, totalDepEsp, totalDepMM });
+  renderKPIs({ soldeCaisse: cumul, soldeMM, totalEspeces, totMob, totalDepTotal, totalDepEsp, totalDepMM });
 
   renderRegList(regulations);
   window._caisseData = { tickets, expenses, bankTx, regulations };
