@@ -15,6 +15,15 @@
     .diff-ok   { color: var(--green); font-weight: 700; }
     .diff-warn { color: var(--yellow); font-weight: 700; }
     .diff-err  { color: var(--red); font-weight: 700; }
+
+    .sess-backdrop { position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199; }
+    .sess-drawer {
+      position:fixed;right:0;top:0;bottom:0;width:380px;max-width:100vw;
+      background:var(--bg2);border-left:1px solid var(--border2);
+      z-index:200;padding:20px;overflow-y:auto;
+      transform:translateX(100%);transition:transform .25s;
+    }
+    .sess-drawer.open { transform:translateX(0); }
   </style>
 </head>
 <body>
@@ -94,6 +103,16 @@
   </div>
 </div>
 
+<!-- Session detail drawer -->
+<div id="sess-backdrop" class="sess-backdrop hidden" onclick="closeSessionDetail()"></div>
+<div id="sess-drawer" class="sess-drawer">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+    <div style="font-weight:700;font-size:15px;">Détail du ticket</div>
+    <button class="btn btn-ghost btn-sm" onclick="closeSessionDetail()">✕</button>
+  </div>
+  <div id="sess-drawer-content"></div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="shared/config.js"></script>
 <script src="shared/auth.js"></script>
@@ -141,7 +160,7 @@ function renderSessions() {
     if(t.payment_especes_xof>0)parts.push(`Esp:${fmt(t.payment_especes_xof)}`);
     if(t.payment_mobile_xof>0)parts.push(`Mob:${fmt(t.payment_mobile_xof)}`);
     if(t.payment_voucher_xof>0)parts.push(`BC:${fmt(t.payment_voucher_xof)}`);
-    return `<tr><td>${t.time_slot}</td><td>${escHtml(t.room_name)}</td><td>${t.num_players}</td><td style="font-weight:600;">${fmt(t.total_price_xof)}</td><td style="font-size:11px;">${parts.join('<br>')}</td><td style="font-size:11px;color:var(--text3);">${t.ticket_number}</td></tr>`;
+    return `<tr style="cursor:pointer;" onclick="openSessionDetail('${t.id}')"><td>${t.time_slot||'—'}</td><td>${escHtml(t.room_name||'Articles')}</td><td>${t.num_players}</td><td style="font-weight:600;">${fmt(t.total_price_xof)}</td><td style="font-size:11px;">${parts.join('<br>')}${(t.extreme_mode_xof||0)>0?`<br><span style="color:var(--yellow);">⚡ Extrême</span>`:''}</td><td style="font-size:11px;color:var(--text3);">${t.ticket_number}</td></tr>`;
   }).join('');
 }
 
@@ -245,6 +264,65 @@ function printReport() {
     </div>
     <div class="report-footer">Imprimé le ${new Date().toLocaleString('fr-FR')}<br>${ENIGMA_CONFIG.businessName}</div>`;
   document.body.classList.add('print-report'); window.print(); document.body.classList.remove('print-report');
+}
+
+// ── Session detail drawer ─────────────────────────────────────
+function openSessionDetail(ticketId) {
+  const t = dayData.tickets.find(x => x.id === ticketId);
+  if (!t) return;
+  const items = dayData.items.filter(i => i.ticket_id === ticketId);
+  const pay = [];
+  if(t.payment_especes_xof>0)        pay.push(['💵 Espèces',t.payment_especes_xof]);
+  if(t.payment_mobile_xof>0)         pay.push(['📱 Mobile Money',t.payment_mobile_xof]);
+  if(t.payment_voucher_xof>0)        pay.push(['🎁 Bon cadeau',t.payment_voucher_xof]);
+  if((t.payment_cheque_xof||0)>0)    pay.push(['📄 Chèque',t.payment_cheque_xof]);
+  if((t.payment_virement_xof||0)>0)  pay.push(['💸 Virement',t.payment_virement_xof]);
+  if((t.payment_advance_xof||0)>0)   pay.push(['✓ Avance',t.payment_advance_xof]);
+  const itemsHTML = items.length
+    ? items.map(i=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border);"><span>${escHtml(i.name)} ×${i.qty}</span><span>${fmt(i.total_xof)}</span></div>`).join('')
+    : '<div style="font-size:12px;color:var(--text3);">Aucun article</div>';
+  const hasPriceDetail = t.base_price_xof>0||t.extra_price_xof>0||(t.extreme_mode_xof||0)>0||t.discount_xof>0;
+  document.getElementById('sess-drawer-content').innerHTML = `
+    <div style="margin-bottom:16px;">
+      <div style="font-size:20px;font-weight:700;color:var(--purple);">${t.ticket_number}</div>
+      <div style="font-size:12px;color:var(--text3);">${formatDate(t.session_date)}${t.time_slot?' · '+t.time_slot:''}</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;">
+      ${t.room_name?`<div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:var(--text3);">Salle</span><span style="font-weight:600;">${escHtml(t.room_name)}</span></div>`:''}
+      ${t.num_players>0?`<div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:var(--text3);">Joueurs</span><span>${t.num_players}</span></div>`:''}
+      ${t.client_name?`<div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:var(--text3);">Client</span><span>${escHtml(t.client_name)}</span></div>`:''}
+      ${t.ticket_type==='forfait'?`<div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:var(--text3);">Type</span><span>🎉 Forfait</span></div>`:''}
+      ${(t.extreme_mode_xof||0)>0?`<div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:var(--text3);">Mode</span><span style="color:var(--yellow);font-weight:600;">⚡ Extrême (+${fmt(t.extreme_mode_xof)})</span></div>`:''}
+      ${t.notes?`<div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:var(--text3);">Notes</span><span>${escHtml(t.notes)}</span></div>`:''}
+      <div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:var(--text3);">Opérateur</span><span>${escHtml(t.operator_name)}</span></div>
+    </div>
+    ${hasPriceDetail?`
+    <div style="border-top:1px solid var(--border);padding-top:12px;margin-bottom:12px;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:8px;">Détail prix</div>
+      ${t.base_price_xof>0?`<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;"><span>Session</span><span>${fmt(t.base_price_xof)}</span></div>`:''}
+      ${t.extra_price_xof>0?`<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;"><span>Supplément</span><span>${fmt(t.extra_price_xof)}</span></div>`:''}
+      ${(t.extreme_mode_xof||0)>0?`<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;color:var(--yellow);"><span>⚡ Extrême</span><span>${fmt(t.extreme_mode_xof)}</span></div>`:''}
+      ${t.discount_xof>0?`<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;color:var(--green);"><span>Remise</span><span>−${fmt(t.discount_xof)}</span></div>`:''}
+    </div>`:''}
+    <div style="border-top:1px solid var(--border);padding-top:12px;margin-bottom:12px;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:8px;">Articles</div>
+      ${itemsHTML}
+    </div>
+    <div style="border-top:1px solid var(--border);padding-top:12px;margin-bottom:16px;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:8px;">Règlement</div>
+      ${pay.map(([l,v])=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;"><span>${l}</span><span>${fmt(v)}</span></div>`).join('')}
+    </div>
+    <div style="background:var(--bg3);border-radius:8px;padding:12px;display:flex;justify-content:space-between;align-items:center;">
+      <span style="font-size:13px;color:var(--text2);">TOTAL</span>
+      <span style="font-size:18px;font-weight:700;">${fmt(t.total_price_xof)}</span>
+    </div>`;
+  document.getElementById('sess-backdrop').classList.remove('hidden');
+  document.getElementById('sess-drawer').classList.add('open');
+}
+
+function closeSessionDetail() {
+  document.getElementById('sess-backdrop').classList.add('hidden');
+  document.getElementById('sess-drawer').classList.remove('open');
 }
 
 // ── Helpers ───────────────────────────────────────────────────

@@ -53,11 +53,6 @@
     .btn-extreme { background: rgba(250,204,21,.1); border-color: rgba(250,204,21,.4); color: var(--yellow); }
     .btn-extreme.active { background: rgba(250,204,21,.25); border-color: var(--yellow); font-weight: 700; box-shadow: 0 0 0 2px rgba(250,204,21,.2); }
 
-    /* Vente sans salle */
-    .btn-article-only.active { background: rgba(124,106,247,.18); border-color: var(--purple); color: var(--purple); font-weight: 700; }
-    #session-section { transition: opacity .2s; }
-    #session-section.faded { opacity: .32; pointer-events: none; user-select: none; }
-
     /* Avances */
     .advance-item { display:flex; align-items:center; gap:10px; padding:10px 12px; background:var(--bg3); border:1px solid var(--border); border-radius:8px; margin-bottom:6px; }
     .advance-item.selected { border-color: var(--green); background: rgba(34,197,94,.07); }
@@ -92,7 +87,6 @@
   <div class="flex-between" style="margin-bottom:12px;">
     <div class="page-title" style="margin:0;">🎫 Caisse — Billetterie</div>
     <div style="display:flex;gap:8px;align-items:center;">
-      <button id="btn-article-only" class="btn btn-ghost btn-sm btn-article-only" onclick="toggleArticleOnly()">🛒 Vente sans salle</button>
       <button class="btn btn-ghost btn-sm" onclick="openDailyReport()">🖨️ Rapport du jour</button>
       <button class="btn btn-ghost btn-sm" onclick="resetForm()">↩️ Nouveau ticket</button>
     </div>
@@ -269,7 +263,8 @@
         </div>
         <div class="field"><label>Notes (salle, créneau…)</label><input type="text" id="adv-notes" placeholder="Ex: Salle Atlas, 18h" /></div>
         <div class="field"><label>Opérateur *</label><input type="text" id="adv-op" placeholder="Votre prénom" /></div>
-        <button class="btn btn-primary btn-full" onclick="saveAdvance()">+ Enregistrer l'avance</button>
+        <button id="adv-save-btn" class="btn btn-primary btn-full" onclick="saveAdvance()">+ Enregistrer l'avance</button>
+        <button id="adv-cancel-btn" class="btn btn-ghost btn-sm btn-full hidden" style="margin-top:4px;" onclick="cancelEditAdvance()">✕ Annuler la modification</button>
       </div>
       <!-- Liste avances en attente -->
       <div class="card">
@@ -301,7 +296,7 @@ let voucherData       = null;
 let extremeModeActive = false;
 let advanceSelected   = null;
 let advancesList      = [];
-let articleOnlyMode   = false;
+let editingAdvanceId  = null;
 
 // ── Init ─────────────────────────────────────────────────────
 window.addEventListener('load', async () => {
@@ -315,23 +310,6 @@ window.addEventListener('load', async () => {
 });
 
 function today() { return new Date().toISOString().slice(0,10); }
-
-// ── Mode vente sans salle ─────────────────────────────────────
-function toggleArticleOnly() {
-  articleOnlyMode = !articleOnlyMode;
-  document.getElementById('btn-article-only').classList.toggle('active', articleOnlyMode);
-  document.getElementById('session-section').classList.toggle('faded', articleOnlyMode);
-  if (articleOnlyMode) {
-    activeRoom = null; extremeModeActive = false;
-    document.getElementById('extreme-mode-row').classList.add('hidden');
-    document.getElementById('btn-extreme').classList.remove('active');
-    document.getElementById('sel-room').value = '';
-    pricingMap = {};
-    updateTotal(0, 0);
-  } else {
-    updateTotal(0, 0);
-  }
-}
 
 // ── Type de ticket (standard / forfait) ──────────────────────
 function onTypeChange() {
@@ -434,7 +412,7 @@ async function onRoomChange() {
 
 // ── Pricing ───────────────────────────────────────────────────
 function calcPrice() {
-  if (!activeRoom || articleOnlyMode) { updateTotal(0,0); return; }
+  if (!activeRoom) { updateTotal(0,0); return; }
   if (document.getElementById('sel-type').value === 'forfait') { onForfaitPriceChange(); return; }
   const n=parseInt(document.getElementById('inp-players').value)||0;
   const minP=activeRoom.min_players, maxP=activeRoom.max_players, extraPP=activeRoom.extra_player_price_xof||0;
@@ -491,7 +469,7 @@ function updateTotal(baseOvr, extraOvr) {
   window._sale = { base, extra, extremeAmt, itemsAmt, discount, voucherP, advanceP, total };
 }
 function _deriveBase() {
-  if (!activeRoom || articleOnlyMode) return 0;
+  if (!activeRoom) return 0;
   if (document.getElementById('sel-type').value === 'forfait') {
     return parseInt(document.getElementById('inp-forfait-price').value) || 0;
   }
@@ -501,7 +479,7 @@ function _deriveBase() {
   return keys.length ? pricingMap[keys[0]] : 0;
 }
 function _deriveExtra() {
-  if (!activeRoom || articleOnlyMode) return 0;
+  if (!activeRoom) return 0;
   const n=parseInt(document.getElementById('inp-players').value)||0;
   const maxP=activeRoom.max_players, extraPP=activeRoom.extra_player_price_xof||0;
   if (n<=maxP) return 0;
@@ -557,6 +535,8 @@ function renderAdvances(list) {
           ? `<button class="btn btn-ghost btn-sm" style="color:var(--red);" onclick="clearAdvance()">✕ Retirer</button>`
           : `<button class="btn btn-success btn-sm" onclick="selectAdvance('${a.id}')">✓ Utiliser</button>`}
         <button class="btn btn-danger btn-sm" onclick="setAdvancePenalty('${a.id}')">⚠ Pénalité</button>
+        ${isAdmin() ? `<button class="btn btn-ghost btn-sm" onclick="editAdvance('${a.id}')">✏️ Edit</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--red);" onclick="deleteAdvance('${a.id}')">🗑</button>` : ''}
       </div>
     </div>`;
   }).join('');
@@ -575,20 +555,78 @@ async function saveAdvance() {
   if (!amount) return toast('Montant requis','err');
   if (!date)   return toast('Date de versement requise','err');
   if (!op)     return toast('Opérateur requis','err');
-  const { error } = await sb.from('advances').insert([{
+  const payload = {
     client_name: name, client_phone: phone||null,
     amount_xof: amount, payment_method: payment,
     reservation_date: resdate||null, date,
-    notes: notes||null, operator_name: op, status: 'pending',
-  }]);
-  if (error) return toast('Erreur : '+error.message,'err');
-  toast('Avance enregistrée','ok');
-  document.getElementById('adv-name').value='';
-  document.getElementById('adv-phone').value='';
-  document.getElementById('adv-amount').value='';
-  document.getElementById('adv-resdate').value='';
-  document.getElementById('adv-notes').value='';
+    notes: notes||null, operator_name: op,
+  };
+  if (editingAdvanceId) {
+    const { error } = await sb.from('advances').update(payload).eq('id', editingAdvanceId);
+    if (error) return toast('Erreur : '+error.message,'err');
+    toast('Avance mise à jour','ok');
+    cancelEditAdvance();
+  } else {
+    const { error } = await sb.from('advances').insert([{ ...payload, status: 'pending' }]);
+    if (error) return toast('Erreur : '+error.message,'err');
+    toast('Avance enregistrée','ok');
+    document.getElementById('adv-name').value='';
+    document.getElementById('adv-phone').value='';
+    document.getElementById('adv-amount').value='';
+    document.getElementById('adv-resdate').value='';
+    document.getElementById('adv-notes').value='';
+  }
   loadAdvances();
+  loadDaySummary();
+}
+
+function editAdvance(id) {
+  const a = advancesList.find(x => x.id === id);
+  if (!a) return;
+  editingAdvanceId = id;
+  document.getElementById('adv-name').value    = a.client_name || '';
+  document.getElementById('adv-phone').value   = a.client_phone || '';
+  document.getElementById('adv-amount').value  = a.amount_xof || '';
+  document.getElementById('adv-payment').value = a.payment_method || 'especes';
+  document.getElementById('adv-date').value    = a.date || '';
+  document.getElementById('adv-resdate').value = a.reservation_date || '';
+  document.getElementById('adv-notes').value   = a.notes || '';
+  document.getElementById('adv-op').value      = a.operator_name || '';
+  const btn = document.getElementById('adv-save-btn');
+  btn.textContent = '✓ Mettre à jour l\'avance';
+  btn.style.background = 'rgba(250,204,21,.2)';
+  btn.style.borderColor = 'var(--yellow)';
+  btn.style.color = 'var(--yellow)';
+  document.getElementById('adv-cancel-btn').classList.remove('hidden');
+  btn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function cancelEditAdvance() {
+  editingAdvanceId = null;
+  document.getElementById('adv-name').value = '';
+  document.getElementById('adv-phone').value = '';
+  document.getElementById('adv-amount').value = '';
+  document.getElementById('adv-date').value = today();
+  document.getElementById('adv-resdate').value = '';
+  document.getElementById('adv-notes').value = '';
+  document.getElementById('adv-op').value = '';
+  const btn = document.getElementById('adv-save-btn');
+  btn.textContent = '+ Enregistrer l\'avance';
+  btn.style.background = '';
+  btn.style.borderColor = '';
+  btn.style.color = '';
+  document.getElementById('adv-cancel-btn').classList.add('hidden');
+}
+
+async function deleteAdvance(id) {
+  if (!confirm('Supprimer cette avance ?')) return;
+  const { error } = await sb.from('advances').delete().eq('id', id);
+  if (error) return toast('Erreur suppression','err');
+  if (advanceSelected?.id === id) clearAdvance();
+  if (editingAdvanceId === id) cancelEditAdvance();
+  advancesList = advancesList.filter(a => a.id !== id);
+  renderAdvances(advancesList);
+  toast('Avance supprimée','ok');
   loadDaySummary();
 }
 
@@ -666,7 +704,7 @@ async function saveSale(doPrint) {
     const ticketPayload = {
       ticket_number:       ticketNum,
       session_date:        sessionDate,
-      num_players:         articleOnlyMode ? 0 : parseInt(document.getElementById('inp-players').value)||0,
+      num_players:         activeRoom ? parseInt(document.getElementById('inp-players').value)||0 : 0,
       base_price_xof:      s.base,
       extra_price_xof:     s.extra,
       extreme_mode_xof:    s.extremeAmt,
@@ -740,15 +778,15 @@ async function nextTicketNumber() {
 }
 
 function validate() {
-  if (!articleOnlyMode) {
-    if (!document.getElementById('sel-room').value) return toast('Choisir une salle','err'),false;
+  const hasRoom = !!document.getElementById('sel-room').value;
+  if (hasRoom) {
     if (!document.getElementById('sel-slot').value) return toast('Choisir un créneau','err'),false;
     if (document.getElementById('sel-type').value === 'forfait') {
       const fp = parseInt(document.getElementById('inp-forfait-price').value)||0;
       if (!fp) return toast('Saisir le prix forfaitaire','err'),false;
     }
   } else {
-    if (!cart.length) return toast('Ajouter au moins un article','err'),false;
+    if (!cart.length) return toast('Salle ou articles requis','err'),false;
   }
   if (!document.getElementById('inp-date').value) return toast('Choisir une date','err'),false;
   const s = window._sale;
@@ -876,7 +914,8 @@ async function openDailyReport() {
         if((t.payment_cheque_xof||0)>0)    parts.push(`Chq:${fmt(t.payment_cheque_xof)}`);
         if((t.payment_virement_xof||0)>0)  parts.push(`Vir:${fmt(t.payment_virement_xof)}`);
         if((t.payment_advance_xof||0)>0)   parts.push(`Av:${fmt(t.payment_advance_xof)}`);
-        return `<div class="report-session-row"><span class="col-time">${t.time_slot||'—'}</span><span class="col-room">${escHtml(t.room_name||'Articles')}</span><span class="col-pax">${t.num_players||0}j</span><span class="col-total">${fmt(t.total_price_xof)}</span></div><div class="report-session-sub">${t.ticket_number} | ${parts.join(' / ')}${tit>0?` | Art:${fmt(tit)}`:''}</div>`;
+        const extTag = (t.extreme_mode_xof||0)>0 ? ' ⚡' : '';
+        return `<div class="report-session-row"><span class="col-time">${t.time_slot||'—'}</span><span class="col-room">${escHtml(t.room_name||'Articles')}${extTag}</span><span class="col-pax">${t.num_players||0}j</span><span class="col-total">${fmt(t.total_price_xof)}</span></div><div class="report-session-sub">${t.ticket_number} | ${parts.join(' / ')}${(t.extreme_mode_xof||0)>0?` | ⚡ Extrême:${fmt(t.extreme_mode_xof)}`:''}${tit>0?` | Art:${fmt(tit)}`:''}</div>`;
       }).join('')
     : '<div style="font-size:9px;color:#555;">Aucune session ce jour</div>';
   const itemsHTML = Object.keys(itemAgg).length
@@ -948,11 +987,6 @@ function resetForm() {
   document.getElementById('advance-pay-info').classList.add('hidden');
   document.getElementById('extreme-mode-row').classList.add('hidden');
   document.getElementById('btn-extreme').classList.remove('active');
-  if (articleOnlyMode) {
-    articleOnlyMode = false;
-    document.getElementById('btn-article-only').classList.remove('active');
-    document.getElementById('session-section').classList.remove('faded');
-  }
   activeRoom=null; voucherData=null; advanceSelected=null; extremeModeActive=false; cart=[]; pricingMap={};
   renderCart(); updateTotal(0,0);
 }
