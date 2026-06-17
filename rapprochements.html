@@ -55,10 +55,11 @@
   <!-- Stats -->
   <div class="stat-grid2">
     <div class="stat-card"><div class="stat-label">Recettes</div><div class="stat-value" id="s-revenue">—</div></div>
-    <div class="stat-card"><div class="stat-label">Espèces</div><div class="stat-value" id="s-cash">—</div></div>
-    <div class="stat-card"><div class="stat-label">Mobile Money</div><div class="stat-value" id="s-mobile">—</div></div>
+    <div class="stat-card"><div class="stat-label">Espèces (entrées)</div><div class="stat-value" id="s-cash">—</div></div>
+    <div class="stat-card"><div class="stat-label">Mobile Money (entrées)</div><div class="stat-value" id="s-mobile">—</div></div>
     <div class="stat-card"><div class="stat-label">Bons cadeaux</div><div class="stat-value" id="s-voucher">—</div></div>
-    <div class="stat-card"><div class="stat-label">Dépenses</div><div class="stat-value" id="s-expenses">—</div></div>
+    <div class="stat-card"><div class="stat-label">Dépenses caisse</div><div class="stat-value" id="s-expenses">—</div></div>
+    <div class="stat-card"><div class="stat-label">Dépenses Mobile Money</div><div class="stat-value" id="s-expenses-mm">—</div></div>
     <div class="stat-card"><div class="stat-label">Sessions</div><div class="stat-value" id="s-sessions">—</div></div>
   </div>
 
@@ -91,8 +92,8 @@
       <div class="card-title">Dépenses validées du jour</div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Catégorie</th><th>Description</th><th>Montant</th></tr></thead>
-          <tbody id="expenses-body"><tr><td colspan="3" class="text-muted" style="text-align:center;padding:16px;">Chargement…</td></tr></tbody>
+          <thead><tr><th>Catégorie</th><th>Description</th><th>Source</th><th>Montant</th></tr></thead>
+          <tbody id="expenses-body"><tr><td colspan="4" class="text-muted" style="text-align:center;padding:16px;">Chargement…</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -147,12 +148,15 @@ async function loadDay() {
 
 function renderStats() {
   const {tickets,expenses}=dayData;
-  setText('s-revenue',  fmt(tickets.reduce((s,t)=>s+t.total_price_xof,0)));
-  setText('s-cash',     fmt(tickets.reduce((s,t)=>s+t.payment_especes_xof,0)));
-  setText('s-mobile',   fmt(tickets.reduce((s,t)=>s+t.payment_mobile_xof,0)));
-  setText('s-voucher',  fmt(tickets.reduce((s,t)=>s+t.payment_voucher_xof,0)));
-  setText('s-expenses', fmt(expenses.reduce((s,e)=>s+e.amount_xof,0)));
-  setText('s-sessions', tickets.length);
+  const expCaisse = expenses.filter(e=>!e.payment_method||e.payment_method==='especes'||e.payment_method==='cheque'||e.payment_method==='virement');
+  const expMM     = expenses.filter(e=>e.payment_method==='mobile_money');
+  setText('s-revenue',     fmt(tickets.reduce((s,t)=>s+t.total_price_xof,0)));
+  setText('s-cash',        fmt(tickets.reduce((s,t)=>s+t.payment_especes_xof,0)));
+  setText('s-mobile',      fmt(tickets.reduce((s,t)=>s+t.payment_mobile_xof,0)));
+  setText('s-voucher',     fmt(tickets.reduce((s,t)=>s+t.payment_voucher_xof,0)));
+  setText('s-expenses',    fmt(expCaisse.reduce((s,e)=>s+e.amount_xof,0)));
+  setText('s-expenses-mm', fmt(expMM.reduce((s,e)=>s+e.amount_xof,0)));
+  setText('s-sessions',    tickets.length);
 }
 
 function renderSessions() {
@@ -167,12 +171,14 @@ function renderSessions() {
   }).join('');
 }
 
+const PAY_SOURCE = { especes:'💵 Caisse', mobile_money:'📱 Mobile Money', cheque:'📄 Chèque', virement:'💸 Virement' };
 function renderExpenses() {
   const tbody=document.getElementById('expenses-body');
-  if (!dayData.expenses.length){tbody.innerHTML='<tr><td colspan="3" class="text-muted" style="text-align:center;padding:16px;">Aucune dépense validée</td></tr>';return;}
+  if (!dayData.expenses.length){tbody.innerHTML='<tr><td colspan="4" class="text-muted" style="text-align:center;padding:16px;">Aucune dépense validée</td></tr>';return;}
   tbody.innerHTML=dayData.expenses.map(e=>{
     const cat=ENIGMA_CONFIG.expenseCategories.find(c=>c.value===e.category);
-    return `<tr><td>${cat?cat.label:e.category}</td><td>${escHtml(e.description)}</td><td style="font-weight:600;">${fmt(e.amount_xof)}</td></tr>`;
+    const src=PAY_SOURCE[e.payment_method]||'💵 Caisse';
+    return `<tr><td>${cat?cat.label:e.category}</td><td>${escHtml(e.description)}</td><td style="font-size:11px;white-space:nowrap;">${src}</td><td style="font-weight:600;">${fmt(e.amount_xof)}</td></tr>`;
   }).join('');
 }
 
@@ -196,7 +202,9 @@ function renderFund() {
 function updateDiff() {
   const {tickets,expenses}=dayData;
   const cash=tickets.reduce((s,t)=>s+t.payment_especes_xof,0);
-  const expCash=expenses.reduce((s,e)=>s+e.amount_xof,0);
+  // Seules les dépenses payées depuis la caisse espèces réduisent le solde physique
+  const expCash=expenses.filter(e=>!e.payment_method||e.payment_method==='especes')
+                        .reduce((s,e)=>s+e.amount_xof,0);
   const open=parseInt(document.getElementById('fund-open').value)||0;
   const close=parseInt(document.getElementById('fund-close').value)||0;
   const theoretical=open+cash-expCash;
@@ -226,17 +234,20 @@ function printReport() {
   const mobile=tickets.reduce((s,t)=>s+t.payment_mobile_xof,0);
   const voucher=tickets.reduce((s,t)=>s+t.payment_voucher_xof,0);
   const expTotal=expenses.reduce((s,e)=>s+e.amount_xof,0);
+  const expCaisseTotal=expenses.filter(e=>!e.payment_method||e.payment_method==='especes').reduce((s,e)=>s+e.amount_xof,0);
+  const expMMTotal=expenses.filter(e=>e.payment_method==='mobile_money').reduce((s,e)=>s+e.amount_xof,0);
   const itemsTotal=items.reduce((s,i)=>s+i.total_xof,0);
   const open=fund?(fund.opening_fund_xof||0):0;
   const close=fund?(fund.closing_fund_xof||0):0;
-  const theoretical=open+cash-expTotal;
+  const theoretical=open+cash-expCaisseTotal;
   const diff=close-theoretical;
   const agg={};items.forEach(i=>{if(!agg[i.name])agg[i.name]={qty:0,total:0};agg[i.name].qty+=i.qty;agg[i.name].total+=i.total_xof;});
   const sessHTML=tickets.map(t=>{
     const parts=[];if(t.payment_especes_xof>0)parts.push(`Esp:${fmt(t.payment_especes_xof)}`);if(t.payment_mobile_xof>0)parts.push(`Mob:${fmt(t.payment_mobile_xof)}`);if(t.payment_voucher_xof>0)parts.push(`BC:${fmt(t.payment_voucher_xof)}`);
     return `<div class="report-session-row"><span class="col-time">${t.time_slot}</span><span class="col-room">${escHtml(t.room_name)}</span><span class="col-pax">${t.num_players}j</span><span class="col-total">${fmt(t.total_price_xof)}</span></div><div class="report-session-sub">${t.ticket_number} | ${parts.join(' / ')}</div>`;
   }).join('')||'<div style="font-size:9px;color:#555;">Aucune session</div>';
-  const expHTML=expenses.map(e=>{const cat=ENIGMA_CONFIG.expenseCategories.find(c=>c.value===e.category);return`<div class="report-item-row"><span class="col-name">${cat?cat.label.replace(/^\S+\s/,''):e.category}</span><span class="col-qty">${escHtml(e.description).substring(0,12)}</span><span class="col-total">−${fmt(e.amount_xof)}</span></div>`;}).join('')||'<div style="font-size:9px;color:#555;">Aucune dépense</div>';
+  const PAY_SRC_PRINT = { especes:'Caisse', mobile_money:'Mobile', cheque:'Chèque', virement:'Virement' };
+  const expHTML=expenses.map(e=>{const cat=ENIGMA_CONFIG.expenseCategories.find(c=>c.value===e.category);const src=PAY_SRC_PRINT[e.payment_method]||'Caisse';return`<div class="report-item-row"><span class="col-name">${cat?cat.label.replace(/^\S+\s/,''):e.category}</span><span class="col-qty">[${src}]</span><span class="col-total">−${fmt(e.amount_xof)}</span></div>`;}).join('')||'<div style="font-size:9px;color:#555;">Aucune dépense</div>';
   const itemsHTML=Object.entries(agg).map(([n,a])=>`<div class="report-item-row"><span class="col-name">${escHtml(n)}</span><span class="col-qty">${a.qty}</span><span class="col-total">${fmt(a.total)}</span></div>`).join('')||'<div style="font-size:9px;color:#555;">Aucun article</div>';
   document.getElementById('report-content').innerHTML=`
     <div class="report-header"><div class="biz-name">${ENIGMA_CONFIG.businessName}</div><div class="report-title">Rapport de rapprochement</div><div class="report-date">${formatDate(date)}</div></div>
@@ -249,7 +260,8 @@ function printReport() {
     <div class="report-totals">
       <div class="report-total-row"><span>Recettes</span><span>${fmt(revenue)}</span></div>
       ${itemsTotal>0?`<div class="report-total-row"><span>Articles</span><span>${fmt(itemsTotal)}</span></div>`:''}
-      ${expTotal>0?`<div class="report-total-row"><span>Dépenses</span><span>−${fmt(expTotal)}</span></div>`:''}
+      ${expCaisseTotal>0?`<div class="report-total-row"><span>Dépenses caisse</span><span>−${fmt(expCaisseTotal)}</span></div>`:''}
+      ${expMMTotal>0?`<div class="report-total-row"><span>Dépenses Mobile Money</span><span>−${fmt(expMMTotal)}</span></div>`:''}
       <div class="report-total-row grand"><span>NET</span><span>${fmt(revenue-expTotal)}</span></div>
       <div style="height:2mm;"></div>
       ${cash>0?`<div class="report-total-row"><span>Espèces</span><span>${fmt(cash)}</span></div>`:''}
@@ -260,7 +272,7 @@ function printReport() {
     <div class="report-totals">
       <div class="report-total-row"><span>Ouverture</span><span>${fmt(open)}</span></div>
       <div class="report-total-row"><span>+ Espèces recettes</span><span>${fmt(cash)}</span></div>
-      ${expTotal>0?`<div class="report-total-row"><span>− Dépenses</span><span>−${fmt(expTotal)}</span></div>`:''}
+      ${expCaisseTotal>0?`<div class="report-total-row"><span>− Dépenses caisse</span><span>−${fmt(expCaisseTotal)}</span></div>`:''}
       <div class="report-total-row grand"><span>Théorique</span><span>${fmt(theoretical)}</span></div>
       <div class="report-total-row"><span>Clôture réel</span><span>${fmt(close)}</span></div>
       <div class="report-total-row" style="font-weight:bold;"><span>Écart</span><span>${diff>=0?'+':''}${fmt(diff)}</span></div>
