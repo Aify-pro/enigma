@@ -39,7 +39,8 @@
 </nav>
 <div id="toast-container"></div>
 
-<!-- Print zone -->
+<!-- Print zones -->
+<div id="print-ticket"><div class="ticket" id="ticket-content"></div></div>
 <div id="print-report"><div class="report" id="report-content"></div></div>
 
 <div id="page-content" class="page">
@@ -119,6 +120,8 @@
 <script>
 const CURRENCY = ENIGMA_CONFIG.currency;
 let dayData = { tickets:[], expenses:[], items:[], fund:null };
+let currentDetailTicket = null;
+let currentDetailItems  = [];
 
 // ── Init ─────────────────────────────────────────────────────
 window.addEventListener('load', async () => {
@@ -271,6 +274,8 @@ function openSessionDetail(ticketId) {
   const t = dayData.tickets.find(x => x.id === ticketId);
   if (!t) return;
   const items = dayData.items.filter(i => i.ticket_id === ticketId);
+  currentDetailTicket = t;
+  currentDetailItems  = items;
   const pay = [];
   if(t.payment_especes_xof>0)        pay.push(['💵 Espèces',t.payment_especes_xof]);
   if(t.payment_mobile_xof>0)         pay.push(['📱 Mobile Money',t.payment_mobile_xof]);
@@ -315,6 +320,9 @@ function openSessionDetail(ticketId) {
     <div style="background:var(--bg3);border-radius:8px;padding:12px;display:flex;justify-content:space-between;align-items:center;">
       <span style="font-size:13px;color:var(--text2);">TOTAL</span>
       <span style="font-size:18px;font-weight:700;">${fmt(t.total_price_xof)}</span>
+    </div>
+    <div style="margin-top:14px;">
+      <button class="btn btn-primary btn-full" onclick="reprintTicket()">🖨️ Réimprimer le ticket</button>
     </div>`;
   document.getElementById('sess-backdrop').classList.remove('hidden');
   document.getElementById('sess-drawer').classList.add('open');
@@ -323,6 +331,79 @@ function openSessionDetail(ticketId) {
 function closeSessionDetail() {
   document.getElementById('sess-backdrop').classList.add('hidden');
   document.getElementById('sess-drawer').classList.remove('open');
+}
+
+function reprintTicket() {
+  if (!currentDetailTicket) return;
+  buildTicketHTML(currentDetailTicket, currentDetailItems);
+  document.body.classList.add('print-ticket');
+  window.print();
+  document.body.classList.remove('print-ticket');
+}
+
+function buildTicketHTML(ticket, items) {
+  const itemsHTML = items.length
+    ? `<hr class="ticket-sep">
+       <div style="font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:.1em;margin-bottom:2mm;color:#444;">Articles</div>
+       <div class="ticket-items">${items.map(i=>`
+         <div class="item-row">
+           <span class="item-label">${escHtml(i.name)}</span>
+           <span class="item-qty">${i.qty}×</span>
+           <span class="item-price">${fmt(i.total_xof)}</span>
+         </div>`).join('')}</div>`
+    : '';
+  const hasPriceDetail = ticket.base_price_xof>0||ticket.extra_price_xof>0||(ticket.extreme_mode_xof||0)>0||items.length>0||ticket.discount_xof>0;
+  const priceRows = hasPriceDetail ? `
+    <hr class="ticket-sep">
+    ${ticket.base_price_xof>0?`<div class="ticket-row"><span class="label">Session</span><span class="value">${fmt(ticket.base_price_xof)}</span></div>`:''}
+    ${ticket.extra_price_xof>0?`<div class="ticket-row"><span class="label">Supplément</span><span class="value">${fmt(ticket.extra_price_xof)}</span></div>`:''}
+    ${(ticket.extreme_mode_xof||0)>0?`<div class="ticket-row"><span class="label">Mode Extreme</span><span class="value">${fmt(ticket.extreme_mode_xof)}</span></div>`:''}
+    ${itemsHTML}
+    ${ticket.discount_xof>0?`<div class="ticket-row"><span class="label">Remise</span><span class="value">- ${fmt(ticket.discount_xof)}</span></div>`:''}
+    ${(ticket.payment_advance_xof||0)>0?`<div class="ticket-row"><span class="label">Avance deduite</span><span class="value">- ${fmt(ticket.payment_advance_xof)}</span></div>`:''}` : '';
+  const payRows = [
+    ticket.payment_especes_xof>0  && ['Especes',     ticket.payment_especes_xof],
+    ticket.payment_mobile_xof>0   && ['Mobile Money',ticket.payment_mobile_xof],
+    ticket.payment_voucher_xof>0  && ['Bon cadeau',  ticket.payment_voucher_xof],
+    ticket.payment_cheque_xof>0   && ['Cheque',      ticket.payment_cheque_xof],
+    ticket.payment_virement_xof>0 && ['Virement',    ticket.payment_virement_xof],
+    (ticket.payment_advance_xof||0)>0 && ['Avance',  ticket.payment_advance_xof],
+  ].filter(Boolean);
+  const roomLine    = ticket.room_name
+    ? `<div class="ticket-row"><span class="label">Salle</span><span class="value">${escHtml(ticket.room_name)}</span></div>`
+    : `<div class="ticket-row"><span class="label">Type</span><span class="value">Vente articles</span></div>`;
+  const slotLine    = ticket.time_slot ? `<div class="ticket-row"><span class="label">Creneau</span><span class="value">${ticket.time_slot}</span></div>` : '';
+  const playersLine = ticket.num_players>0 ? `<div class="ticket-row"><span class="label">Joueurs</span><span class="value">${ticket.num_players} pers.</span></div>` : '';
+  const clientLine  = ticket.client_name ? `<div class="ticket-row"><span class="label">Client</span><span class="value">${escHtml(ticket.client_name)}</span></div>` : '';
+  const now         = new Date().toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  document.getElementById('ticket-content').innerHTML = `
+    <div class="ticket-header">
+      <div class="biz-name">${escHtml(ENIGMA_CONFIG.businessName)}</div>
+      <div class="ticket-subtitle">- Billet d'entree (duplicata) -</div>
+    </div>
+    <div class="ticket-number-label">N° de billet</div>
+    <div class="ticket-number">${ticket.ticket_number}</div>
+    <hr class="ticket-sep">
+    ${roomLine}
+    <div class="ticket-row"><span class="label">Date</span><span class="value">${formatDate(ticket.session_date)}</span></div>
+    ${slotLine}
+    ${playersLine}
+    ${clientLine}
+    ${priceRows}
+    <div class="ticket-total-box">
+      <div class="total-label">Total a regler</div>
+      <div class="total-amount">${fmt(ticket.total_price_xof)}</div>
+    </div>
+    ${payRows.length?`
+    <div class="ticket-payments">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#444;margin-bottom:1.5mm;">Reglement</div>
+      ${payRows.map(([l,v])=>`<div class="pay-row"><span class="pay-label">${l}</span><span>${fmt(v)}</span></div>`).join('')}
+    </div>`:''}
+    <div class="ticket-footer">
+      <div class="thanks">Merci et bonne aventure !</div>
+      ${ticket.notes?`<div class="ticket-note">${escHtml(ticket.notes)}</div>`:''}
+      <div class="ticket-meta">Emis par ${escHtml(ticket.operator_name)}<br>Réimprimé le ${now}</div>
+    </div>`;
 }
 
 // ── Helpers ───────────────────────────────────────────────────

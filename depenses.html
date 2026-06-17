@@ -43,7 +43,7 @@
       <div class="field"><label>Montant (FCFA) *</label><input type="number" id="inp-amount" min="1" placeholder="0" /></div>
       <div class="field"><label>Catégorie *</label><select id="inp-cat"></select></div>
       <div class="field"><label>Description</label><textarea id="inp-desc" rows="2" placeholder="Détails de la dépense…"></textarea></div>
-      <div class="field">
+      <div class="field" id="payment-field">
         <label>Moyen de paiement *</label>
         <select id="inp-payment">
           <option value="especes">💵 Espèces</option>
@@ -117,6 +117,20 @@ window.addEventListener('load', async () => {
   ENIGMA_CONFIG.expenseCategories.forEach(c => {
     document.getElementById('inp-cat').insertAdjacentHTML('beforeend',
       `<option value="${c.value}">${c.label}</option>`);
+  });
+
+  document.getElementById('inp-cat').addEventListener('change', function() {
+    const payField  = document.getElementById('payment-field');
+    const paySelect = document.getElementById('inp-payment');
+    if (this.value === 'depot_especes') {
+      paySelect.value = 'especes';
+      payField.style.display = 'none';
+    } else if (this.value === 'depot_mobile_money') {
+      paySelect.value = 'mobile_money';
+      payField.style.display = 'none';
+    } else {
+      payField.style.display = '';
+    }
   });
 
   if (isAdmin()) {
@@ -245,7 +259,31 @@ async function changeStatus(id, status) {
   }).eq('id', id);
   if (error) return toast('Erreur mise à jour','err');
 
-  // Si c'est un dépôt banque validé → créer une transaction bancaire
+  // Dépôt espèces validé → transaction bancaire (espèces → banque)
+  if (exp && exp.category === 'depot_especes' && status === 'validated') {
+    await sb.from('bank_transactions').insert([{
+      date: exp.date,
+      type: 'credit',
+      amount_xof: exp.amount_xof,
+      category: 'depot_especes',
+      description: exp.description || 'Dépôt espèces',
+      expense_id: id,
+      created_by: currentUser.email,
+    }]);
+  }
+  // Dépôt Mobile Money validé → transaction bancaire + réduit solde MM via payment_method
+  if (exp && exp.category === 'depot_mobile_money' && status === 'validated') {
+    await sb.from('bank_transactions').insert([{
+      date: exp.date,
+      type: 'credit',
+      amount_xof: exp.amount_xof,
+      category: 'depot_especes',
+      description: exp.description || 'Dépôt Mobile Money',
+      expense_id: id,
+      created_by: currentUser.email,
+    }]);
+  }
+  // Compatibilité ancienne catégorie 'banque' → transaction bancaire
   if (exp && exp.category === 'banque' && status === 'validated') {
     await sb.from('bank_transactions').insert([{
       date: exp.date,
@@ -257,8 +295,9 @@ async function changeStatus(id, status) {
       created_by: currentUser.email,
     }]);
   }
-  // Si on rejette ou remet en attente une dépense banque déjà liée → supprimer la transaction
-  if (exp && exp.category === 'banque' && (status === 'rejected' || status === 'pending')) {
+  // Rejet / remise en attente → supprimer la transaction bancaire liée
+  const depositCats = ['banque', 'depot_especes', 'depot_mobile_money'];
+  if (exp && depositCats.includes(exp.category) && (status === 'rejected' || status === 'pending')) {
     await sb.from('bank_transactions').delete().eq('expense_id', id);
   }
 

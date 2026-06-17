@@ -23,7 +23,8 @@ const ENIGMA_CONFIG = {
     { value: 'fournitures',  label: '📦 Fournitures' },
     { value: 'marketing',    label: '📢 Marketing' },
     { value: 'maintenance',  label: '🔧 Maintenance' },
-    { value: 'banque',       label: '🏦 Dépôt banque' },
+    { value: 'depot_especes',      label: '💵 Dépôt espèces' },
+    { value: 'depot_mobile_money', label: '📱 Dépôt Mobile Money' },
     { value: 'autres',       label: '📋 Autres' },
   ],
 };
