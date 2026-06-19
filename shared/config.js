@@ -23,8 +23,9 @@ const ENIGMA_CONFIG = {
     { value: 'fournitures',  label: '📦 Fournitures' },
     { value: 'marketing',    label: '📢 Marketing' },
     { value: 'maintenance',  label: '🔧 Maintenance' },
-    { value: 'depot_especes',      label: '💵 Dépôt espèces' },
-    { value: 'depot_mobile_money', label: '📱 Dépôt Mobile Money' },
+    { value: 'rechargement_mm',    label: '🔄 Recharge Mobile Money (depuis caisse)' },
+    { value: 'depot_especes',      label: '💵 Dépôt espèces (vers banque)' },
+    { value: 'depot_mobile_money', label: '📱 Dépôt Mobile Money (vers banque)' },
     { value: 'autres',       label: '📋 Autres' },
   ],
 };

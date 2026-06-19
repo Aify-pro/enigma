@@ -56,7 +56,7 @@
   <div class="stat-grid2">
     <div class="stat-card"><div class="stat-label">Recettes</div><div class="stat-value" id="s-revenue">—</div></div>
     <div class="stat-card"><div class="stat-label">Espèces (entrées)</div><div class="stat-value" id="s-cash">—</div></div>
-    <div class="stat-card"><div class="stat-label">Mobile Money (entrées)</div><div class="stat-value" id="s-mobile">—</div></div>
+    <div class="stat-card"><div class="stat-label">Solde Mobile Money</div><div class="stat-value" id="s-mobile">—</div></div>
     <div class="stat-card"><div class="stat-label">Bons cadeaux</div><div class="stat-value" id="s-voucher">—</div></div>
     <div class="stat-card"><div class="stat-label">Dépenses caisse</div><div class="stat-value" id="s-expenses">—</div></div>
     <div class="stat-card"><div class="stat-label">Dépenses Mobile Money</div><div class="stat-value" id="s-expenses-mm">—</div></div>
@@ -120,7 +120,7 @@
 <script src="shared/auth.js"></script>
 <script>
 const CURRENCY = ENIGMA_CONFIG.currency;
-let dayData = { tickets:[], expenses:[], items:[], fund:null };
+let dayData = { tickets:[], expenses:[], items:[], fund:null, mmRecharges:[] };
 let currentDetailTicket = null;
 let currentDetailItems  = [];
 
@@ -136,23 +136,27 @@ function today() { return new Date().toISOString().slice(0,10); }
 // ── Load day ──────────────────────────────────────────────────
 async function loadDay() {
   const date = document.getElementById('sel-date').value || today();
-  const [tRes,eRes,iRes,fRes] = await Promise.all([
+  const [tRes,eRes,iRes,fRes,mmRes] = await Promise.all([
     sb.from('tickets').select('*').eq('session_date',date).eq('status','confirmed').order('time_slot'),
     sb.from('expenses').select('*').eq('date',date).eq('status','validated').order('created_at'),
     sb.from('ticket_items').select('*, tickets!inner(session_date)').eq('tickets.session_date',date),
     sb.from('daily_fund').select('*').eq('date',date).maybeSingle(),
+    sb.from('caisse_regulations').select('*').eq('date',date).eq('type','rechargement_mm').eq('direction','credit'),
   ]);
-  dayData = { tickets:tRes.data||[], expenses:eRes.data||[], items:iRes.data||[], fund:fRes.data||null };
+  dayData = { tickets:tRes.data||[], expenses:eRes.data||[], items:iRes.data||[], fund:fRes.data||null, mmRecharges:mmRes.data||[] };
   renderStats(); renderSessions(); renderExpenses(); renderItems(); renderFund(); updateDiff();
 }
 
 function renderStats() {
-  const {tickets,expenses}=dayData;
+  const {tickets,expenses,mmRecharges}=dayData;
   const expCaisse = expenses.filter(e=>!e.payment_method||e.payment_method==='especes'||e.payment_method==='cheque'||e.payment_method==='virement');
   const expMM     = expenses.filter(e=>e.payment_method==='mobile_money');
+  const mmIncome  = tickets.reduce((s,t)=>s+t.payment_mobile_xof,0);
+  const mmRech    = mmRecharges.reduce((s,r)=>s+r.amount_xof,0);
+  const mmSolde   = mmIncome + mmRech - expMM.reduce((s,e)=>s+e.amount_xof,0);
   setText('s-revenue',     fmt(tickets.reduce((s,t)=>s+t.total_price_xof,0)));
   setText('s-cash',        fmt(tickets.reduce((s,t)=>s+t.payment_especes_xof,0)));
-  setText('s-mobile',      fmt(tickets.reduce((s,t)=>s+t.payment_mobile_xof,0)));
+  setText('s-mobile',      fmt(mmSolde));
   setText('s-voucher',     fmt(tickets.reduce((s,t)=>s+t.payment_voucher_xof,0)));
   setText('s-expenses',    fmt(expCaisse.reduce((s,e)=>s+e.amount_xof,0)));
   setText('s-expenses-mm', fmt(expMM.reduce((s,e)=>s+e.amount_xof,0)));

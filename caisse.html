@@ -704,6 +704,9 @@ async function saveSale(doPrint) {
     const ticketPayload = {
       ticket_number:       ticketNum,
       session_date:        sessionDate,
+      room_id:             activeRoom ? activeRoom.id : null,
+      room_name:           activeRoom ? activeRoom.name : '',
+      time_slot:           activeRoom ? document.getElementById('sel-slot').value : '',
       num_players:         activeRoom ? parseInt(document.getElementById('inp-players').value)||0 : 0,
       base_price_xof:      s.base,
       extra_price_xof:     s.extra,
@@ -724,11 +727,6 @@ async function saveSale(doPrint) {
       notes:               document.getElementById('inp-notes').value.trim(),
       status:              'confirmed',
     };
-    if (activeRoom) {
-      ticketPayload.room_id   = activeRoom.id;
-      ticketPayload.room_name = activeRoom.name;
-      ticketPayload.time_slot = document.getElementById('sel-slot').value;
-    }
 
     const { data:ticket, error:tErr } = await sb.from('tickets').insert([ticketPayload]).select().single();
     if (tErr) throw tErr;

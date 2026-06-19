@@ -115,6 +115,12 @@ const SOURCE_INFO = {
   cheque:       '→ Enregistré comme paiement par chèque',
   virement:     '→ Enregistré comme virement bancaire',
 };
+// Catégories qui forcent une source spécifique et verrouillent le sélecteur
+const CAT_FORCED_SOURCE = {
+  depot_especes:      'especes',
+  depot_mobile_money: 'mobile_money',
+  rechargement_mm:    'especes',
+};
 
 window.addEventListener('load', async () => {
   try { await requireAuth(); } catch(e) { return; }
@@ -136,13 +142,19 @@ window.addEventListener('load', async () => {
   document.getElementById('inp-cat').addEventListener('change', function() {
     const payField  = document.getElementById('payment-field');
     const paySelect = document.getElementById('inp-payment');
-    if (this.value === 'depot_especes') {
-      paySelect.value = 'especes';
-      payField.style.display = 'none';
-    } else if (this.value === 'depot_mobile_money') {
-      paySelect.value = 'mobile_money';
-      payField.style.display = 'none';
+    const forced    = CAT_FORCED_SOURCE[this.value];
+    if (forced) {
+      paySelect.value    = forced;
+      paySelect.disabled = true;
+      payField.style.display = '';   // toujours visible pour info
+      if (this.value === 'rechargement_mm') {
+        document.getElementById('source-info').textContent =
+          '→ Prélève dans la caisse espèces et crédite le Mobile Money';
+      } else {
+        updateSourceInfo();
+      }
     } else {
+      paySelect.disabled = false;
       payField.style.display = '';
       updateSourceInfo();
     }
@@ -310,6 +322,24 @@ async function changeStatus(id, status) {
       created_by: currentUser.email,
     }]);
   }
+  // Recharge Mobile Money validée → crédite une régulation caisse MM
+  if (exp && exp.category === 'rechargement_mm' && status === 'validated') {
+    await sb.from('caisse_regulations').insert([{
+      date: exp.date,
+      type: 'rechargement_mm',
+      label: 'Recharge Mobile Money depuis caisse',
+      amount_xof: exp.amount_xof,
+      direction: 'credit',
+      description: exp.description || 'Recharge MM',
+      created_by: currentUser.email,
+    }]);
+  }
+  // Annulation d'une recharge MM → supprimer la régulation liée
+  if (exp && exp.category === 'rechargement_mm' && (status === 'rejected' || status === 'pending')) {
+    await sb.from('caisse_regulations').delete()
+      .eq('type', 'rechargement_mm').eq('date', exp.date).eq('amount_xof', exp.amount_xof);
+  }
+
   // Rejet / remise en attente → supprimer la transaction bancaire liée
   const depositCats = ['banque', 'depot_especes', 'depot_mobile_money'];
   if (exp && depositCats.includes(exp.category) && (status === 'rejected' || status === 'pending')) {
