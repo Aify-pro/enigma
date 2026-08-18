@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Joueurs &amp; classement — Enigma</title>
+  <link rel="icon" href="shared/favicon.png">
   <link rel="stylesheet" href="shared/style.css">
-  <link rel="stylesheet" href="shared/ui.css">
   <style>
     .layout { display:grid; grid-template-columns: 440px 1fr; gap:16px; align-items:start; }
     @media (max-width:960px){ .layout{ grid-template-columns:1fr; } }
@@ -35,19 +35,7 @@
   </style>
 </head>
 <body>
-<nav class="navbar">
-  <a class="navbar-brand" href="caisse.html">Enigma <span>Escape Game</span></a>
-  <a class="nav-link" href="caisse.html">🎫 Caisse</a>
-  <a class="nav-link" href="reservations.html">🌐 Réservations</a>
-  <a class="nav-link active" href="joueurs.html">🏆 Joueurs</a>
-  <a class="nav-link" href="depenses.html">💸 Dépenses</a>
-  <a class="nav-link" href="planning.html">📅 Planning</a>
-  <a class="nav-link hidden" id="nav-rapprochements" href="rapprochements.html">📊 Rapprochements</a>
-  <a class="nav-link hidden" id="nav-admin" href="admin.html">⚙️ Admin</a>
-  <a class="nav-link hidden" id="nav-site" href="site.html">🖥️ Site public</a>
-  <span id="nav-user" style="font-size:11px;color:var(--text3);margin-left:auto;padding:0 12px;"></span>
-  <button class="btn btn-ghost btn-sm" onclick="logout()">Déconnexion</button>
-</nav>
+<nav class="navbar"><!-- généré par shared/auth.js --></nav>
 <div id="toast-container"></div>
 
 <div class="page">
@@ -113,7 +101,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="shared/config.js"></script>
 <script src="shared/auth.js"></script>
-<script src="shared/ui.js"></script>
 <script>
 let rooms = [], teams = [], members = [], keys = [], houdini = [];
 const KEYS_PER_ROOM = 6;   // nombre de clés cachées par salle (adaptable : ajoutez une colonne rooms.keys_count si besoin)
