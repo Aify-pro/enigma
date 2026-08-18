@@ -34,7 +34,13 @@
     .vid-row { display:grid; grid-template-columns:120px 1fr auto; gap:12px; align-items:start; padding:10px 0; border-bottom:1px solid var(--border); }
     .vid-row img { width:120px; aspect-ratio:16/9; object-fit:cover; border-radius:6px; border:1px solid var(--border2); }
     .vid-row .t { font-weight:600; font-size:13px; } .vid-row .d { font-size:12px; color:var(--text2); margin-top:3px; }
-    .vid-preview { aspect-ratio:16/9; border-radius:8px; border:1px dashed var(--border2); background:var(--bg3) center/cover; display:grid; place-items:center; color:var(--text3); font-size:12px; margin-bottom:12px; }
+    .vid-preview { aspect-ratio:16/9; border-radius:8px; border:1px dashed var(--border2); background:var(--bg3) center/cover; display:grid; place-items:center; color:var(--text3); font-size:12px; margin-bottom:12px; text-align:center; padding:10px; }
+    .platform-pick { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-bottom:12px; }
+    .platform-pick button { padding:8px 4px; border-radius:8px; border:1px solid var(--border2); background:var(--bg3); color:var(--text2); cursor:pointer; font-size:11px; display:flex; flex-direction:column; align-items:center; gap:4px; transition:all .15s; }
+    .platform-pick button .ic { font-size:16px; line-height:1; }
+    .platform-pick button.active { border-color:var(--purple); color:var(--text); background:rgba(124,106,247,.15); }
+    .platform-badge { display:inline-flex; align-items:center; gap:4px; font-size:10px; padding:2px 7px; border-radius:20px; text-transform:uppercase; letter-spacing:.03em; font-weight:600; white-space:nowrap; }
+    .vid-row img.ph, .vid-row .ph { width:120px; aspect-ratio:16/9; border-radius:6px; border:1px solid var(--border2); display:grid; place-items:center; font-size:20px; color:#fff; }
   </style>
 </head>
 <body>
@@ -51,7 +57,7 @@
   <div class="tabs">
     <div class="tab active" data-tab="rooms">Salles &amp; photos</div>
     <div class="tab" data-tab="home">Album d'accueil</div>
-    <div class="tab" data-tab="videos">Vidéos YouTube</div>
+    <div class="tab" data-tab="videos">Vidéos</div>
     <div class="tab" data-tab="faq">Questions fréquentes</div>
     <div class="tab" data-tab="testi">Témoignages</div>
     <div class="tab" data-tab="settings">Textes &amp; contact</div>
@@ -149,8 +155,15 @@
       <div class="card">
         <div class="card-title" id="vid-form-title">Nouvelle vidéo</div>
         <input type="hidden" id="v-id">
+        <div class="platform-pick" id="v-platform-pick">
+          <button type="button" data-p="youtube" class="active"><span class="ic">▶</span>YouTube</button>
+          <button type="button" data-p="tiktok"><span class="ic">♪</span>TikTok</button>
+          <button type="button" data-p="facebook"><span class="ic">f</span>Facebook</button>
+          <button type="button" data-p="instagram"><span class="ic">◎</span>Instagram</button>
+        </div>
         <div class="vid-preview" id="v-preview">Aperçu</div>
-        <div class="field"><label>Lien YouTube *</label><input id="v-url" placeholder="https://www.youtube.com/watch?v=…" oninput="previewVideo()"></div>
+        <div class="field"><label id="v-url-label">Lien YouTube *</label><input id="v-url" placeholder="https://www.youtube.com/watch?v=…" oninput="previewVideo()"></div>
+        <div class="field"><label>Miniature personnalisée — URL image (facultatif)</label><input id="v-thumb" placeholder="https://…jpg" oninput="previewVideo()"></div>
         <div class="field"><label>Titre *</label><input id="v-title" maxlength="120" placeholder="Sortie de l'équipe Les Insomniaques"></div>
         <div class="field"><label>Description (facultatif)</label><textarea id="v-desc" rows="2" placeholder="Une phrase de contexte…"></textarea></div>
         <div class="field-row">
@@ -203,6 +216,7 @@ window.addEventListener('load', async () => {
     t.classList.add('active'); document.getElementById('tab-' + t.dataset.tab).classList.add('active');
   }));
   document.querySelectorAll('#r-diff i').forEach((i,idx) => i.addEventListener('click', () => setDiff(idx+1)));
+  document.querySelectorAll('#v-platform-pick button').forEach(b => b.addEventListener('click', () => setPlatform(b.dataset.p)));
   const drop = document.getElementById('gal-drop');
   ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
   ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
@@ -385,38 +399,121 @@ async function moveHome(id, dir) {
   loadHome();
 }
 
-// ── Vidéos YouTube ────────────────────────────────────────
+// ── Vidéos multi-plateformes (YouTube / TikTok / Facebook / Instagram) ──
+const PLATFORM_META = {
+  youtube:   { label: 'YouTube',   color: '#ff3b3b', icon: '▶', placeholder: 'https://www.youtube.com/watch?v=…', urlLabel: 'Lien YouTube *' },
+  tiktok:    { label: 'TikTok',    color: '#1f1f24', icon: '♪', placeholder: 'https://www.tiktok.com/@compte/video/…', urlLabel: 'Lien TikTok *' },
+  facebook:  { label: 'Facebook',  color: '#1877f2', icon: 'f', placeholder: 'https://www.facebook.com/…/videos/… ou https://fb.watch/…', urlLabel: 'Lien Facebook *' },
+  instagram: { label: 'Instagram', color: '#e1306c', icon: '◎', placeholder: 'https://www.instagram.com/p/…/ ou /reel/…/', urlLabel: 'Lien Instagram *' }
+};
+let currentPlatform = 'youtube';
+
+function setPlatform(p) {
+  currentPlatform = p;
+  document.querySelectorAll('#v-platform-pick button').forEach(b => b.classList.toggle('active', b.dataset.p === p));
+  document.getElementById('v-url-label').textContent = PLATFORM_META[p].urlLabel;
+  document.getElementById('v-url').placeholder = PLATFORM_META[p].placeholder;
+  previewVideo();
+}
+
 function ytId(input) {
   const s = String(input || '').trim();
   if (/^[A-Za-z0-9_-]{11}$/.test(s)) return s;
   const m = s.match(/(?:youtu\.be\/|v=|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/);
   return m ? m[1] : null;
 }
-function previewVideo() {
-  const id = ytId(document.getElementById('v-url').value);
-  const box = document.getElementById('v-preview');
-  if (id) { box.style.backgroundImage = `url(https://i.ytimg.com/vi/${id}/hqdefault.jpg)`; box.textContent = ''; }
-  else { box.style.backgroundImage = ''; box.textContent = 'Aperçu — collez un lien YouTube'; }
+function tiktokId(input) {
+  const m = String(input || '').match(/video\/(\d+)/);
+  return m ? m[1] : null;
 }
+function instagramRef(input) {
+  const m = String(input || '').match(/instagram\.com\/(p|reel|tv)\/([A-Za-z0-9_-]+)/i);
+  return m ? { type: m[1], code: m[2] } : null;
+}
+
+// Valide le lien selon la plateforme et renvoie { video_id, video_url } ou null si invalide
+function parseVideoInput(platform, raw) {
+  const url = String(raw || '').trim();
+  if (!url) return null;
+  if (platform === 'youtube') {
+    const id = ytId(url);
+    return id ? { video_id: id, video_url: url } : null;
+  }
+  if (platform === 'tiktok') {
+    if (!/tiktok\.com/i.test(url)) return null;
+    return { video_id: tiktokId(url), video_url: url };
+  }
+  if (platform === 'facebook') {
+    if (!/facebook\.com|fb\.watch/i.test(url)) return null;
+    return { video_id: null, video_url: url };
+  }
+  if (platform === 'instagram') {
+    const ref = instagramRef(url);
+    return ref ? { video_id: `${ref.type}:${ref.code}`, video_url: url } : null;
+  }
+  return null;
+}
+
+// Miniature automatique quand la plateforme le permet (seul YouTube expose une image publique fiable)
+function autoThumb(platform, video_id) {
+  if (platform === 'youtube' && video_id) return `https://i.ytimg.com/vi/${video_id}/hqdefault.jpg`;
+  return null;
+}
+
+function previewVideo() {
+  const box = document.getElementById('v-preview');
+  const parsed = parseVideoInput(currentPlatform, document.getElementById('v-url').value);
+  const customThumb = document.getElementById('v-thumb').value.trim();
+  const meta = PLATFORM_META[currentPlatform];
+  const thumb = customThumb || (parsed ? autoThumb(currentPlatform, parsed.video_id) : null);
+  if (thumb) {
+    box.style.backgroundImage = `url(${thumb})`;
+    box.style.background = `url(${thumb}) center/cover`;
+    box.textContent = '';
+  } else if (parsed) {
+    box.style.background = meta.color;
+    box.style.backgroundImage = '';
+    box.style.color = '#fff';
+    box.textContent = `${meta.icon} Lien ${meta.label} valide — pas de miniature automatique. Ajoutez une image ci-dessus si besoin.`;
+  } else {
+    box.style.background = 'var(--bg3)';
+    box.style.backgroundImage = '';
+    box.style.color = '';
+    box.textContent = `Aperçu — collez un lien ${meta.label}`;
+  }
+}
+
+function videoThumbHtml(v) {
+  const thumb = v.thumbnail_url || autoThumb(v.platform, v.video_id);
+  if (thumb) return `<img src="${thumb}" alt="">`;
+  const meta = PLATFORM_META[v.platform] || PLATFORM_META.youtube;
+  return `<div class="ph" style="background:${meta.color}">${meta.icon}</div>`;
+}
+
 async function loadVideos() {
   const { data, error } = await sb.from('site_videos').select('*').order('sort_order');
   if (error) return toast(error.message, 'err');
-  document.getElementById('vid-list').innerHTML = (data || []).map(v => `
+  document.getElementById('vid-list').innerHTML = (data || []).map(v => {
+    const meta = PLATFORM_META[v.platform] || PLATFORM_META.youtube;
+    return `
     <div class="vid-row">
-      <img src="https://i.ytimg.com/vi/${v.youtube_id}/mqdefault.jpg" alt="">
-      <div><div class="t">${escHtml(v.title)} ${v.is_published ? '' : '<span class="text-err">(masquée)</span>'}</div>
+      ${videoThumbHtml(v)}
+      <div><div class="t"><span class="platform-badge" style="background:${meta.color}22;color:${meta.color}">${meta.icon} ${meta.label}</span> ${escHtml(v.title)} ${v.is_published ? '' : '<span class="text-err">(masquée)</span>'}</div>
         <div class="d">${escHtml(v.description || '')}</div>
-        <div class="d text-muted">ordre ${v.sort_order} · ${escHtml(v.youtube_id)}</div></div>
+        <div class="d text-muted">ordre ${v.sort_order}</div></div>
       <div style="white-space:nowrap;">
         <button class="btn btn-ghost btn-sm" onclick='editVideo(${JSON.stringify(v).replace(/'/g, "&#39;")})'>✎</button>
         <button class="btn btn-ghost btn-sm" onclick="togVideo('${v.id}',${v.is_published})">${v.is_published ? 'Masquer' : 'Publier'}</button>
         <button class="btn btn-ghost btn-sm" onclick="delVideo('${v.id}')">✕</button>
       </div>
-    </div>`).join('') || '<div class="text-muted">Aucune vidéo. Collez un lien YouTube à gauche.</div>';
+    </div>`;
+  }).join('') || '<div class="text-muted">Aucune vidéo. Choisissez une plateforme et collez un lien à gauche.</div>';
 }
 function editVideo(v) {
   document.getElementById('v-id').value = v.id;
-  document.getElementById('v-url').value = 'https://www.youtube.com/watch?v=' + v.youtube_id;
+  setPlatform(v.platform || 'youtube');
+  document.getElementById('v-url').value = v.video_url || (v.platform === 'youtube' || !v.platform ? 'https://www.youtube.com/watch?v=' + (v.video_id || v.youtube_id) : '');
+  document.getElementById('v-thumb').value = v.thumbnail_url || '';
   document.getElementById('v-title').value = v.title;
   document.getElementById('v-desc').value = v.description || '';
   document.getElementById('v-order').value = v.sort_order;
@@ -425,24 +522,31 @@ function editVideo(v) {
   previewVideo();
 }
 function resetVideo() {
-  ['v-id','v-url','v-title','v-desc'].forEach(i => document.getElementById(i).value = '');
+  ['v-id','v-url','v-thumb','v-title','v-desc'].forEach(i => document.getElementById(i).value = '');
   document.getElementById('v-order').value = 0;
   document.getElementById('v-pub').value = 'true';
   document.getElementById('vid-form-title').textContent = 'Nouvelle vidéo';
-  previewVideo();
+  setPlatform('youtube');
 }
 async function saveVideo() {
   const id = document.getElementById('v-id').value;
-  const yt = ytId(document.getElementById('v-url').value);
-  if (!yt) return toast('Lien YouTube invalide', 'err');
+  const parsed = parseVideoInput(currentPlatform, document.getElementById('v-url').value);
+  if (!parsed) return toast(`Lien ${PLATFORM_META[currentPlatform].label} invalide`, 'err');
   const p = {
-    youtube_id: yt,
+    platform: currentPlatform,
+    video_id: parsed.video_id,
+    video_url: parsed.video_url,
+    youtube_id: currentPlatform === 'youtube' ? parsed.video_id : null, // compat rétro
+    thumbnail_url: document.getElementById('v-thumb').value.trim() || null,
     title: document.getElementById('v-title').value.trim(),
     description: document.getElementById('v-desc').value.trim() || null,
     sort_order: parseInt(document.getElementById('v-order').value) || 0,
     is_published: document.getElementById('v-pub').value === 'true'
   };
   if (!p.title) return toast('Le titre est obligatoire', 'err');
+  if (currentPlatform === 'tiktok' && !p.video_id) {
+    toast('Astuce : utilisez le lien complet (barre d\'adresse ou "Copier le lien" > "Copier le lien vidéo") pour un meilleur rendu', 'ok');
+  }
   const { error } = id ? await sb.from('site_videos').update(p).eq('id', id) : await sb.from('site_videos').insert([p]);
   if (error) return toast(error.message, 'err');
   toast('Vidéo enregistrée', 'ok'); resetVideo(); loadVideos();
