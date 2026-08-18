@@ -179,19 +179,78 @@
 
   <!-- SETTINGS -->
   <div id="tab-settings" class="tab-panel">
+    <p class="text-muted" style="font-size:12px;margin-bottom:14px;">Tous les textes de la page d'accueil du site public se modifient ici. Les salles, témoignages, vidéos et questions fréquentes ont leurs propres onglets ci-dessus.</p>
+
     <div class="two-col">
       <div class="card">
-        <div class="card-title">Page d'accueil</div>
+        <div class="card-title">Bandeau d'accueil (hero)</div>
+        <div class="field"><label>Badge (au-dessus du titre)</label><input id="s-badge" maxlength="80"></div>
         <div class="field-row"><div class="field"><label>Titre ligne 1</label><input id="s-title1"></div><div class="field"><label>Titre ligne 2</label><input id="s-title2"></div></div>
         <div class="field"><label>Sous-titre</label><textarea id="s-sub" rows="3"></textarea></div>
-        <hr class="sep">
+        <div class="field-row"><div class="field"><label>Bouton principal</label><input id="s-cta1"></div><div class="field"><label>Bouton secondaire</label><input id="s-cta2"></div></div>
+        <button class="btn btn-primary btn-full" onclick="saveHero()">Enregistrer</button>
+      </div>
+
+      <div class="card">
+        <div class="flex-between" style="margin-bottom:12px;"><div class="card-title" style="margin:0;">Bandeau défilant</div>
+          <button class="btn btn-ghost btn-sm" onclick="addTickerItem()">+ Ajouter une phrase</button></div>
+        <p class="text-muted" style="font-size:12px;margin-bottom:10px;">Les courtes phrases qui défilent en boucle juste sous le grand visuel d'accueil.</p>
+        <div id="ticker-fields"></div>
+        <button class="btn btn-primary btn-full mt-2" onclick="saveTicker()">Enregistrer</button>
+      </div>
+    </div>
+
+    <div class="two-col mt-2">
+      <div class="card">
+        <div class="card-title">Section « Nos salles »</div>
+        <div class="field"><label>Eyebrow (petit texte au-dessus)</label><input id="s-rooms-eyebrow" maxlength="40"></div>
+        <div class="field-row"><div class="field"><label>Titre ligne 1</label><input id="s-rooms-title1"></div><div class="field"><label>Titre ligne 2</label><input id="s-rooms-title2"></div></div>
+        <div class="field"><label>Sous-titre</label><textarea id="s-rooms-sub" rows="2"></textarea></div>
+        <button class="btn btn-primary btn-full" onclick="saveSectionRooms()">Enregistrer</button>
+      </div>
+      <div class="card">
+        <div class="card-title">Section « Témoignages »</div>
+        <div class="field"><label>Eyebrow</label><input id="s-testi-eyebrow" maxlength="40"></div>
+        <div class="field-row"><div class="field"><label>Titre ligne 1</label><input id="s-testi-title1"></div><div class="field"><label>Titre ligne 2</label><input id="s-testi-title2"></div></div>
+        <button class="btn btn-primary btn-full" onclick="saveSectionTesti()">Enregistrer</button>
+      </div>
+    </div>
+
+    <div class="two-col mt-2">
+      <div class="card">
+        <div class="card-title">Section « Vidéos »</div>
+        <div class="field"><label>Eyebrow</label><input id="s-videos-eyebrow" maxlength="40"></div>
+        <div class="field-row"><div class="field"><label>Titre ligne 1</label><input id="s-videos-title1"></div><div class="field"><label>Titre ligne 2</label><input id="s-videos-title2"></div></div>
+        <div class="field"><label>Bouton « voir toutes les vidéos »</label><input id="s-videos-cta"></div>
+        <button class="btn btn-primary btn-full" onclick="saveSectionVideos()">Enregistrer</button>
+      </div>
+      <div class="card">
+        <div class="card-title">Bandeau final (avant le pied de page)</div>
+        <div class="field"><label>Titre</label><input id="s-ctaband-title"></div>
+        <div class="field"><label>Texte</label><textarea id="s-ctaband-sub" rows="2"></textarea></div>
+        <div class="field"><label>Bouton</label><input id="s-ctaband-cta"></div>
+        <button class="btn btn-primary btn-full" onclick="saveCtaBand()">Enregistrer</button>
+      </div>
+    </div>
+
+    <div class="two-col mt-2">
+      <div class="card">
+        <div class="card-title">Pied de page</div>
+        <div class="field"><label>Phrase sous le logo</label><input id="s-footer-tagline"></div>
+        <div class="field"><label>Ligne de copyright</label><input id="s-footer-copyright"></div>
+        <button class="btn btn-primary btn-full" onclick="saveFooter()">Enregistrer</button>
+      </div>
+      <div class="card">
         <div class="card-title">Contact</div>
         <div class="field"><label>Téléphone</label><input id="s-phone"></div>
         <div class="field"><label>Email</label><input id="s-email"></div>
         <div class="field"><label>Adresse</label><input id="s-address"></div>
         <div class="field-row"><div class="field"><label>Instagram (URL)</label><input id="s-insta"></div><div class="field"><label>Facebook (URL)</label><input id="s-fb"></div></div>
-        <button class="btn btn-primary btn-full" onclick="saveSettings()">Enregistrer</button>
+        <button class="btn btn-primary btn-full" onclick="saveContact()">Enregistrer</button>
       </div>
+    </div>
+
+    <div class="two-col mt-2">
       <div class="card">
         <div class="card-title">Horaires affichés</div>
         <div id="hours-fields"></div>
@@ -330,28 +389,97 @@ async function delTesti(id) { if (!confirm('Supprimer ?')) return; await sb.from
 
 // ── Réglages ──────────────────────────────────────────────
 const DAYS = [['lun','Lundi'],['mar','Mardi'],['mer','Mercredi'],['jeu','Jeudi'],['ven','Vendredi'],['sam','Samedi'],['dim','Dimanche']];
-let settings = {};
+let settings = {}, tickerItems = [];
 async function loadSettings() {
   const { data } = await sb.from('site_settings').select('*');
   (data||[]).forEach(r => settings[r.key] = r.value);
   const h = settings.hero || {}, c = settings.contact || {}, hr = settings.hours || {};
+  const sr = settings.section_rooms || {}, st = settings.section_testi || {}, sv = settings.section_videos || {};
+  const cb = settings.cta_band || {}, ft = settings.footer || {};
+
+  document.getElementById('s-badge').value = h.badge || '';
   document.getElementById('s-title1').value = h.title_1 || ''; document.getElementById('s-title2').value = h.title_2 || ''; document.getElementById('s-sub').value = h.subtitle || '';
+  document.getElementById('s-cta1').value = h.cta_1 || ''; document.getElementById('s-cta2').value = h.cta_2 || '';
+
   document.getElementById('s-phone').value = c.phone || ''; document.getElementById('s-email').value = c.email || ''; document.getElementById('s-address').value = c.address || '';
   document.getElementById('s-insta').value = c.instagram || ''; document.getElementById('s-fb').value = c.facebook || '';
+
+  document.getElementById('s-rooms-eyebrow').value = sr.eyebrow || ''; document.getElementById('s-rooms-title1').value = sr.title_1 || '';
+  document.getElementById('s-rooms-title2').value = sr.title_2 || ''; document.getElementById('s-rooms-sub').value = sr.subtitle || '';
+
+  document.getElementById('s-testi-eyebrow').value = st.eyebrow || ''; document.getElementById('s-testi-title1').value = st.title_1 || '';
+  document.getElementById('s-testi-title2').value = st.title_2 || '';
+
+  document.getElementById('s-videos-eyebrow').value = sv.eyebrow || ''; document.getElementById('s-videos-title1').value = sv.title_1 || '';
+  document.getElementById('s-videos-title2').value = sv.title_2 || ''; document.getElementById('s-videos-cta').value = sv.cta || '';
+
+  document.getElementById('s-ctaband-title').value = cb.title || ''; document.getElementById('s-ctaband-sub').value = cb.subtitle || '';
+  document.getElementById('s-ctaband-cta').value = cb.cta || '';
+
+  document.getElementById('s-footer-tagline').value = ft.tagline || ''; document.getElementById('s-footer-copyright').value = ft.copyright || '';
+
+  tickerItems = Array.isArray((settings.ticker||{}).items) ? [...settings.ticker.items] : [];
+  renderTicker();
+
   document.getElementById('hours-fields').innerHTML = DAYS.map(([k,l]) => `<div class="field-row"><div class="field" style="flex:0 0 110px;"><label>${l}</label></div><div class="field"><input id="h-${k}" value="${escHtml(hr[k]||'')}" placeholder="12h–00h ou fermé"></div></div>`).join('');
 }
 async function upsert(key, value) {
   const { error } = await sb.from('site_settings').upsert({ key, value, updated_at: new Date().toISOString(), updated_by: currentUser.display_name });
   if (error) toast(error.message, 'err'); return !error;
 }
-async function saveSettings() {
-  const ok1 = await upsert('hero', { title_1: document.getElementById('s-title1').value.trim(), title_2: document.getElementById('s-title2').value.trim(), subtitle: document.getElementById('s-sub').value.trim() });
-  const ok2 = await upsert('contact', { phone: document.getElementById('s-phone').value.trim(), email: document.getElementById('s-email').value.trim(), address: document.getElementById('s-address').value.trim(), instagram: document.getElementById('s-insta').value.trim(), facebook: document.getElementById('s-fb').value.trim() });
-  if (ok1 && ok2) toast('Textes publiés', 'ok');
+async function saveHero() {
+  const ok = await upsert('hero', {
+    badge: document.getElementById('s-badge').value.trim(),
+    title_1: document.getElementById('s-title1').value.trim(),
+    title_2: document.getElementById('s-title2').value.trim(),
+    subtitle: document.getElementById('s-sub').value.trim(),
+    cta_1: document.getElementById('s-cta1').value.trim(),
+    cta_2: document.getElementById('s-cta2').value.trim()
+  });
+  if (ok) toast('Bandeau d\'accueil publié', 'ok');
+}
+async function saveContact() {
+  const ok = await upsert('contact', { phone: document.getElementById('s-phone').value.trim(), email: document.getElementById('s-email').value.trim(), address: document.getElementById('s-address').value.trim(), instagram: document.getElementById('s-insta').value.trim(), facebook: document.getElementById('s-fb').value.trim() });
+  if (ok) toast('Contact publié', 'ok');
+}
+async function saveSectionRooms() {
+  const ok = await upsert('section_rooms', { eyebrow: document.getElementById('s-rooms-eyebrow').value.trim(), title_1: document.getElementById('s-rooms-title1').value.trim(), title_2: document.getElementById('s-rooms-title2').value.trim(), subtitle: document.getElementById('s-rooms-sub').value.trim() });
+  if (ok) toast('Section « Nos salles » publiée', 'ok');
+}
+async function saveSectionTesti() {
+  const ok = await upsert('section_testi', { eyebrow: document.getElementById('s-testi-eyebrow').value.trim(), title_1: document.getElementById('s-testi-title1').value.trim(), title_2: document.getElementById('s-testi-title2').value.trim() });
+  if (ok) toast('Section « Témoignages » publiée', 'ok');
+}
+async function saveSectionVideos() {
+  const ok = await upsert('section_videos', { eyebrow: document.getElementById('s-videos-eyebrow').value.trim(), title_1: document.getElementById('s-videos-title1').value.trim(), title_2: document.getElementById('s-videos-title2').value.trim(), cta: document.getElementById('s-videos-cta').value.trim() });
+  if (ok) toast('Section « Vidéos » publiée', 'ok');
+}
+async function saveCtaBand() {
+  const ok = await upsert('cta_band', { title: document.getElementById('s-ctaband-title').value.trim(), subtitle: document.getElementById('s-ctaband-sub').value.trim(), cta: document.getElementById('s-ctaband-cta').value.trim() });
+  if (ok) toast('Bandeau final publié', 'ok');
+}
+async function saveFooter() {
+  const ok = await upsert('footer', { tagline: document.getElementById('s-footer-tagline').value.trim(), copyright: document.getElementById('s-footer-copyright').value.trim() });
+  if (ok) toast('Pied de page publié', 'ok');
 }
 async function saveHours() {
   const v = {}; DAYS.forEach(([k]) => v[k] = document.getElementById('h-'+k).value.trim());
   if (await upsert('hours', v)) toast('Horaires publiés', 'ok');
+}
+// ── Bandeau défilant (ticker) ──────────────────────────────
+function renderTicker() {
+  document.getElementById('ticker-fields').innerHTML = tickerItems.map((t, i) => `
+    <div class="field-row" style="align-items:center;">
+      <input value="${escHtml(t)}" maxlength="60" oninput="tickerItems[${i}]=this.value">
+      <button class="btn btn-ghost btn-sm" onclick="removeTickerItem(${i})">✕</button>
+    </div>`).join('') || '<div class="text-muted" style="font-size:12px;">Aucune phrase. Ajoutez-en une.</div>';
+}
+function addTickerItem() { tickerItems.push(''); renderTicker(); }
+function removeTickerItem(i) { tickerItems.splice(i, 1); renderTicker(); }
+async function saveTicker() {
+  const items = tickerItems.map(t => t.trim()).filter(Boolean);
+  if (!items.length) return toast('Ajoutez au moins une phrase', 'err');
+  if (await upsert('ticker', { items })) { tickerItems = items; renderTicker(); toast('Bandeau défilant publié', 'ok'); }
 }
 // ── Album d'accueil ───────────────────────────────────────
 let homeShots = [];
