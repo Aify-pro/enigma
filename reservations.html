@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Réservations en ligne — Enigma</title>
+  <link rel="stylesheet" href="shared/style.css">
+  <link rel="stylesheet" href="shared/ui.css">
+  <style>
+    .layout { display: grid; grid-template-columns: 1fr 360px; gap: 16px; align-items: start; }
+    @media (max-width: 960px) { .layout { grid-template-columns: 1fr; } }
+    .filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+    .chip { padding:6px 12px; border-radius:20px; border:1px solid var(--border2); background:var(--bg3); font-size:12px; cursor:pointer; color:var(--text2); transition:all .15s; }
+    .chip.active, .chip:hover { border-color:var(--purple); color:var(--text); background:rgba(124,106,247,.12); }
+    .req { display:grid; grid-template-columns: 90px 1fr auto; gap:14px; align-items:center; padding:12px 14px; border:1px solid var(--border); border-radius:8px; margin-bottom:8px; background:var(--bg2); transition: border-color .15s, transform .15s; }
+    .req:hover { border-color:var(--border2); transform:translateY(-1px); }
+    .req.selected { border-color:var(--purple); }
+    .req .when { font-weight:700; font-size:15px; }
+    .req .when small { display:block; font-weight:400; color:var(--text3); font-size:11px; }
+    .req .who { font-size:13px; }
+    .req .who .sub { color:var(--text3); font-size:11px; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:20px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
+    .st-pending          { background:rgba(250,204,21,.15); color:var(--yellow); }
+    .st-deposit_received { background:rgba(34,211,238,.15); color:var(--cyan); }
+    .st-confirmed        { background:rgba(74,222,128,.15); color:var(--green); }
+    .st-cancelled, .st-no_show { background:rgba(248,113,113,.15); color:var(--red); }
+    .kv { display:flex; justify-content:space-between; font-size:13px; padding:7px 0; border-bottom:1px solid var(--border); }
+    .kv b { color:var(--text); font-weight:600; }
+    .kv span:first-child { color:var(--text3); }
+    .empty { text-align:center; color:var(--text3); padding:40px 0; font-size:13px; }
+    .pulse { animation: pulse 1.6s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+  </style>
+</head>
+<body>
+<nav class="navbar">
+  <a class="navbar-brand" href="caisse.html">Enigma <span>Escape Game</span></a>
+  <a class="nav-link" href="caisse.html">🎫 Caisse</a>
+  <a class="nav-link active" href="reservations.html">🌐 Réservations <span class="nav-count hidden" id="nav-res-count"></span></a>
+  <a class="nav-link" href="joueurs.html">🏆 Joueurs</a>
+  <a class="nav-link" href="depenses.html">💸 Dépenses</a>
+  <a class="nav-link" href="planning.html">📅 Planning</a>
+  <a class="nav-link hidden" id="nav-rapprochements" href="rapprochements.html">📊 Rapprochements</a>
+  <a class="nav-link hidden" id="nav-admin" href="admin.html">⚙️ Admin</a>
+  <a class="nav-link hidden" id="nav-site" href="site.html">🖥️ Site public</a>
+  <span id="nav-user" style="font-size:11px;color:var(--text3);margin-left:auto;padding:0 12px;"></span>
+  <button class="btn btn-ghost btn-sm" onclick="logout()">Déconnexion</button>
+</nav>
+<div id="toast-container"></div>
+
+<div class="page">
+  <div class="flex-between" style="margin-bottom:20px;">
+    <div class="page-title" style="margin:0;">🌐 Réservations en ligne <span id="live-dot" class="pulse" style="font-size:10px;color:var(--green);margin-left:6px;">● temps réel</span></div>
+    <button class="btn btn-ghost btn-sm" onclick="loadRequests()">↻ Actualiser</button>
+  </div>
+
+  <div class="stat-grid" id="stats"></div>
+
+  <div class="layout">
+    <div>
+      <div class="filters" id="filters">
+        <span class="chip active" data-f="pending">En attente</span>
+        <span class="chip" data-f="deposit_received">Acompte reçu</span>
+        <span class="chip" data-f="confirmed">Confirmées</span>
+        <span class="chip" data-f="cancelled">Annulées</span>
+        <span class="chip" data-f="all">Toutes</span>
+        <input type="search" id="q" placeholder="Rechercher nom / téléphone…" style="width:220px;margin-left:auto;padding:6px 10px;font-size:12px;">
+      </div>
+      <div id="list"><div class="empty">Chargement…</div></div>
+    </div>
+
+    <div class="card" id="detail">
+      <div class="card-title">Détail de la demande</div>
+      <div id="detail-body" class="text-muted" style="font-size:13px;">Sélectionnez une demande dans la liste.</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="shared/config.js"></script>
+<script src="shared/auth.js"></script>
+<script src="shared/ui.js"></script>
+<script>
+const LABELS = { pending:'En attente', deposit_received:'Acompte reçu', confirmed:'Confirmée', cancelled:'Annulée', no_show:'Absent' };
+let rows = [], rooms = {}, filter = 'pending', selectedId = null;
+
+window.addEventListener('load', async () => {
+  try { await requireAuth(); } catch(e) { return; }
+  const { data } = await sb.from('rooms').select('id,name,color,extreme_mode_price_xof');
+  (data||[]).forEach(r => rooms[r.id] = r);
+  await loadRequests();
+  // Temps réel : nouvelle demande depuis le site
+  sb.channel('resreq').on('postgres_changes', { event:'*', schema:'public', table:'reservation_requests' }, payload => {
+    if (payload.eventType === 'INSERT') { toast('Nouvelle demande : ' + payload.new.client_name, 'info'); if (window.uiPing) uiPing(); }
+    loadRequests();
+  }).subscribe();
+});
+
+document.getElementById('filters').addEventListener('click', e => {
+  const c = e.target.closest('.chip'); if (!c) return;
+  document.querySelectorAll('.chip').forEach(x => x.classList.remove('active')); c.classList.add('active');
+  filter = c.dataset.f; render();
+});
+document.getElementById('q').addEventListener('input', render);
+
+async function loadRequests() {
+  const { data, error } = await sb.from('reservation_requests').select('*').order('created_at', { ascending:false }).limit(500);
+  if (error) return toast('Erreur : ' + error.message, 'err');
+  rows = data || [];
+  renderStats(); render();
+  if (selectedId) showDetail(selectedId);
+}
+
+function renderStats() {
+  const c = s => rows.filter(r => r.status === s).length;
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById('stats').innerHTML = [
+    ['En attente', c('pending'), 'à traiter', 'var(--yellow)'],
+    ['Acompte reçu', c('deposit_received'), 'créneaux bloqués', 'var(--cyan)'],
+    ['Confirmées', c('confirmed'), 'au total', 'var(--green)'],
+    ["Aujourd'hui", rows.filter(r => r.session_date === today && ['deposit_received','confirmed'].includes(r.status)).length, 'parties réservées en ligne', 'var(--text)']
+  ].map(([l,v,s,col]) => `<div class="stat-card ui-rise"><div class="stat-label">${l}</div><div class="stat-value" style="color:${col}" data-count="${v}">0</div><div class="stat-sub">${s}</div></div>`).join('');
+  if (window.uiCountUp) uiCountUp();
+  const pending = c('pending'); const badge = document.getElementById('nav-res-count');
+  badge.textContent = pending; badge.classList.toggle('hidden', !pending);
+}
+
+function fmtDate(d) { const x = new Date(d + 'T00:00:00'); return x.toLocaleDateString('fr-FR', { weekday:'short', day:'2-digit', month:'short' }); }
+
+function render() {
+  const q = document.getElementById('q').value.trim().toLowerCase();
+  let list = rows.filter(r => filter === 'all' || r.status === filter);
+  if (q) list = list.filter(r => (r.client_name + ' ' + r.client_phone + ' ' + (r.client_email||'')).toLowerCase().includes(q));
+  const el = document.getElementById('list');
+  if (!list.length) { el.innerHTML = '<div class="empty">Aucune demande dans cette catégorie.</div>'; return; }
+  el.innerHTML = list.map(r => `
+    <div class="req ui-rise ${r.id === selectedId ? 'selected' : ''}" onclick="showDetail('${r.id}')">
+      <div class="when">${r.time_slot}<small>${fmtDate(r.session_date)}</small></div>
+      <div class="who"><span style="color:${rooms[r.room_id]?.color||'#7c6af7'}">●</span> <b>${escHtml(r.client_name)}</b> · ${r.num_players} joueurs${r.extreme_mode ? ' · <span style="color:var(--pink)">extrême</span>' : ''}
+        <div class="sub">${escHtml(rooms[r.room_id]?.name || '?')} · ${escHtml(r.client_phone)} · reçu ${new Date(r.created_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</div></div>
+      <span class="badge st-${r.status}">${LABELS[r.status]}</span>
+    </div>`).join('');
+}
+
+function showDetail(id) {
+  selectedId = id; const r = rows.find(x => x.id === id); if (!r) return;
+  document.querySelectorAll('.req').forEach(x => x.classList.toggle('selected', x.getAttribute('onclick').includes(id)));
+  const room = rooms[r.room_id] || {};
+  const kv = (k,v) => `<div class="kv"><span>${k}</span><b>${v ?? '—'}</b></div>`;
+  let actions = '';
+  if (r.status === 'pending') actions = `
+      <button class="btn btn-primary btn-full mt-2" onclick="setStatus('${r.id}','deposit_received')">💰 Acompte reçu → bloquer le créneau</button>
+      <button class="btn btn-ghost btn-full mt-1" onclick="setStatus('${r.id}','cancelled')">Annuler la demande</button>`;
+  else if (r.status === 'deposit_received') actions = `
+      <button class="btn btn-success btn-full mt-2" onclick="setStatus('${r.id}','confirmed')">✓ Client arrivé / partie confirmée</button>
+      <button class="btn btn-ghost btn-full mt-1" onclick="setStatus('${r.id}','no_show')">Client absent</button>
+      <button class="btn btn-ghost btn-full mt-1" onclick="setStatus('${r.id}','cancelled')">Annuler (libérer le créneau)</button>`;
+  else if (r.status === 'confirmed') actions = `<div class="notice-ok mt-2">Partie confirmée. Encaissez le solde à la caisse comme d'habitude.</div>`;
+  else actions = `<button class="btn btn-ghost btn-full mt-2" onclick="setStatus('${r.id}','pending')">Réactiver la demande</button>`;
+
+  document.getElementById('detail-body').innerHTML = `
+    <div style="font-size:16px;font-weight:700;margin-bottom:10px;">${escHtml(r.client_name)} <span class="badge st-${r.status}" style="margin-left:6px;">${LABELS[r.status]}</span></div>
+    ${kv('Salle', escHtml(room.name))}
+    ${kv('Date', fmtDate(r.session_date))}
+    ${kv('Créneau', r.time_slot)}
+    ${kv('Joueurs', r.num_players + (r.extreme_mode ? ' · mode extrême' : ''))}
+    ${kv('Téléphone', `<a href="tel:${r.client_phone}" style="color:var(--cyan)">${escHtml(r.client_phone)}</a>`)}
+    ${kv('Email', r.client_email ? escHtml(r.client_email) : '—')}
+    ${kv('Message', r.message ? escHtml(r.message) : '—')}
+    ${kv('Traité par', r.handled_by ? escHtml(r.handled_by) + ' · ' + new Date(r.handled_at).toLocaleString('fr-FR') : '—')}
+    ${actions}
+    <p class="text-muted" style="font-size:11px;margin-top:14px;line-height:1.6;">Le créneau n'est bloqué sur le site qu'à l'état <b>Acompte reçu</b> ou <b>Confirmée</b>. Enregistrez l'acompte dans la Caisse (onglet Avances) avec le même nom de client.</p>`;
+}
+
+async function setStatus(id, status) {
+  const { error } = await sb.from('reservation_requests').update({ status, handled_by: currentUser.display_name, handled_at: new Date().toISOString() }).eq('id', id);
+  if (error) return toast('Erreur : ' + error.message, 'err');
+  toast('Statut : ' + LABELS[status], 'ok');
+  await loadRequests();
+}
+
+function escHtml(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+</script>
+</body>
+</html>

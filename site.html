@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Site public — Enigma</title>
+  <link rel="stylesheet" href="shared/style.css">
+  <link rel="stylesheet" href="shared/ui.css">
+  <style>
+    .tabs { display:flex; gap:6px; margin-bottom:18px; border-bottom:1px solid var(--border); }
+    .tab { padding:10px 16px; cursor:pointer; color:var(--text2); font-size:13px; border-bottom:2px solid transparent; margin-bottom:-1px; transition:all .15s; }
+    .tab.active { color:var(--text); border-color:var(--purple); }
+    .tab-panel { display:none; } .tab-panel.active { display:block; animation: ui-fade .3s ease; }
+    .two-col { display:grid; grid-template-columns: 420px 1fr; gap:16px; align-items:start; }
+    @media (max-width:960px){ .two-col{ grid-template-columns:1fr; } }
+    .room-pick { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+    .room-pick button { padding:8px 14px; border-radius:20px; border:1px solid var(--border2); background:var(--bg3); color:var(--text2); cursor:pointer; font-size:13px; }
+    .room-pick button.active { border-color:var(--purple); color:var(--text); background:rgba(124,106,247,.15); }
+    .gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px; }
+    .gimg { position:relative; aspect-ratio:4/3; border-radius:8px; overflow:hidden; border:1px solid var(--border2); background:var(--bg3); }
+    .gimg img { width:100%; height:100%; object-fit:cover; display:block; }
+    .gimg .del { position:absolute; top:6px; right:6px; background:rgba(0,0,0,.7); border:none; color:#fff; border-radius:4px; cursor:pointer; padding:2px 6px; font-size:11px; }
+    .gimg .cap { position:absolute; left:0; right:0; bottom:0; background:rgba(0,0,0,.6); font-size:10px; padding:4px 6px; color:#ddd; }
+    .cover { aspect-ratio:16/9; border-radius:8px; border:1px dashed var(--border2); background:var(--bg3) center/cover; display:grid; place-items:center; color:var(--text3); font-size:12px; margin-bottom:10px; }
+    .drop { border:2px dashed var(--border2); border-radius:8px; padding:18px; text-align:center; color:var(--text3); font-size:12px; cursor:pointer; transition:border-color .15s, background .15s; }
+    .drop.over, .drop:hover { border-color:var(--purple); background:rgba(124,106,247,.06); }
+    .faq-row { display:grid; grid-template-columns:40px 1fr auto; gap:10px; align-items:start; padding:10px 0; border-bottom:1px solid var(--border); }
+    .faq-row .q { font-weight:600; font-size:13px; } .faq-row .a { font-size:12px; color:var(--text2); margin-top:3px; }
+    .diff { display:flex; gap:6px; } .diff i { width:22px; height:6px; background:var(--border2); border-radius:3px; cursor:pointer; } .diff i.on { background:var(--pink); }
+    .preview-link { font-size:12px; }
+  </style>
+</head>
+<body>
+<nav class="navbar">
+  <a class="navbar-brand" href="caisse.html">Enigma <span>Escape Game</span></a>
+  <a class="nav-link" href="caisse.html">🎫 Caisse</a>
+  <a class="nav-link" href="reservations.html">🌐 Réservations</a>
+  <a class="nav-link" href="joueurs.html">🏆 Joueurs</a>
+  <a class="nav-link" href="depenses.html">💸 Dépenses</a>
+  <a class="nav-link" href="planning.html">📅 Planning</a>
+  <a class="nav-link hidden" id="nav-rapprochements" href="rapprochements.html">📊 Rapprochements</a>
+  <a class="nav-link hidden" id="nav-admin" href="admin.html">⚙️ Admin</a>
+  <a class="nav-link active hidden" id="nav-site" href="site.html">🖥️ Site public</a>
+  <span id="nav-user" style="font-size:11px;color:var(--text3);margin-left:auto;padding:0 12px;"></span>
+  <button class="btn btn-ghost btn-sm" onclick="logout()">Déconnexion</button>
+</nav>
+<div id="toast-container"></div>
+
+<div class="page">
+  <div class="flex-between" style="margin-bottom:16px;">
+    <div class="page-title" style="margin:0;">🖥️ Site public</div>
+    <a class="btn btn-ghost btn-sm" href="https://enigma.ci" target="_blank" rel="noopener">Voir le site ↗</a>
+  </div>
+  <div class="notice">Tout ce que vous modifiez ici est publié <b>immédiatement</b> sur le site. Les salles, créneaux et tarifs se gèrent dans <a href="admin.html" style="color:var(--cyan)">Admin</a> ; ici vous gérez leur présentation.</div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="rooms">Salles &amp; photos</div>
+    <div class="tab" data-tab="faq">Questions fréquentes</div>
+    <div class="tab" data-tab="testi">Témoignages</div>
+    <div class="tab" data-tab="settings">Textes &amp; contact</div>
+  </div>
+
+  <!-- SALLES -->
+  <div id="tab-rooms" class="tab-panel active">
+    <div class="room-pick" id="room-pick"></div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">Présentation de la salle</div>
+        <div class="field"><label>Publiée sur le site</label><select id="r-pub"><option value="true">Oui</option><option value="false">Non (masquée)</option></select></div>
+        <div class="field"><label>Accroche (1 phrase, affichée en grand)</label><input id="r-tagline" maxlength="90" placeholder="Certains ne meurent jamais…"></div>
+        <div class="field"><label>Texte de présentation</label><textarea id="r-desc" rows="4" placeholder="Décrivez l'ambiance sans dévoiler les énigmes…"></textarea></div>
+        <div class="field-row">
+          <div class="field"><label>Thème / genre</label><input id="r-theme" placeholder="Épouvante, Thriller, Aventure…"></div>
+          <div class="field"><label>Points par clé (classement)</label><input id="r-points" type="number" min="0" value="100"></div>
+        </div>
+        <div class="field"><label>Difficulté</label><div class="diff" id="r-diff"><i></i><i></i><i></i><i></i><i></i></div></div>
+        <button class="btn btn-primary btn-full" onclick="saveRoom()">Enregistrer</button>
+      </div>
+      <div>
+        <div class="card" style="margin-bottom:16px;">
+          <div class="card-title">Image principale (affichée sur la porte)</div>
+          <div class="cover" id="r-cover">Aucune image</div>
+          <div class="drop" onclick="document.getElementById('cover-file').click()">Cliquez pour choisir une image (JPG/PNG/WEBP, max 4 Mo)</div>
+          <input type="file" id="cover-file" accept="image/*" class="hidden" onchange="uploadCover(this.files[0])">
+        </div>
+        <div class="card">
+          <div class="flex-between" style="margin-bottom:12px;"><div class="card-title" style="margin:0;">Galerie (images qui défilent)</div>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('gal-file').click()">+ Ajouter</button></div>
+          <input type="file" id="gal-file" accept="image/*" multiple class="hidden" onchange="uploadGallery(this.files)">
+          <div class="drop" id="gal-drop" style="margin-bottom:12px;">Glissez-déposez plusieurs images ici</div>
+          <div class="gallery" id="gallery"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FAQ -->
+  <div id="tab-faq" class="tab-panel">
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title" id="faq-form-title">Nouvelle question</div>
+        <input type="hidden" id="faq-id">
+        <div class="field"><label>Question</label><input id="faq-q"></div>
+        <div class="field"><label>Réponse</label><textarea id="faq-a" rows="4"></textarea></div>
+        <div class="field-row"><div class="field"><label>Ordre</label><input id="faq-o" type="number" value="0"></div><div class="field"><label>Publiée</label><select id="faq-p"><option value="true">Oui</option><option value="false">Non</option></select></div></div>
+        <button class="btn btn-primary btn-full" onclick="saveFaq()">Enregistrer</button>
+        <button class="btn btn-ghost btn-full mt-1" onclick="resetFaq()">Nouvelle</button>
+      </div>
+      <div class="card"><div class="card-title">Questions publiées</div><div id="faq-list"></div></div>
+    </div>
+  </div>
+
+  <!-- TEMOIGNAGES -->
+  <div id="tab-testi" class="tab-panel">
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">Nouveau témoignage</div>
+        <div class="field"><label>Auteur</label><input id="t-author" placeholder="Prénom N., équipe…"></div>
+        <div class="field"><label>Citation</label><textarea id="t-quote" rows="3"></textarea></div>
+        <button class="btn btn-primary btn-full" onclick="saveTesti()">Publier</button>
+      </div>
+      <div class="card"><div class="card-title">Témoignages</div><div id="testi-list"></div></div>
+    </div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div id="tab-settings" class="tab-panel">
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">Page d'accueil</div>
+        <div class="field-row"><div class="field"><label>Titre ligne 1</label><input id="s-title1"></div><div class="field"><label>Titre ligne 2</label><input id="s-title2"></div></div>
+        <div class="field"><label>Sous-titre</label><textarea id="s-sub" rows="3"></textarea></div>
+        <hr class="sep">
+        <div class="card-title">Contact</div>
+        <div class="field"><label>Téléphone</label><input id="s-phone"></div>
+        <div class="field"><label>Email</label><input id="s-email"></div>
+        <div class="field"><label>Adresse</label><input id="s-address"></div>
+        <div class="field-row"><div class="field"><label>Instagram (URL)</label><input id="s-insta"></div><div class="field"><label>Facebook (URL)</label><input id="s-fb"></div></div>
+        <button class="btn btn-primary btn-full" onclick="saveSettings()">Enregistrer</button>
+      </div>
+      <div class="card">
+        <div class="card-title">Horaires affichés</div>
+        <div id="hours-fields"></div>
+        <button class="btn btn-primary btn-full mt-2" onclick="saveHours()">Enregistrer les horaires</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="shared/config.js"></script>
+<script src="shared/auth.js"></script>
+<script src="shared/ui.js"></script>
+<script>
+let rooms = [], activeRoom = null, difficulty = 3;
+const BUCKET = 'site';
+const pubUrl = path => sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+
+window.addEventListener('load', async () => {
+  try { await requireAdmin(); } catch(e) { return; }
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('.tab,.tab-panel').forEach(x => x.classList.remove('active'));
+    t.classList.add('active'); document.getElementById('tab-' + t.dataset.tab).classList.add('active');
+  }));
+  document.querySelectorAll('#r-diff i').forEach((i,idx) => i.addEventListener('click', () => setDiff(idx+1)));
+  const drop = document.getElementById('gal-drop');
+  ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', e => uploadGallery(e.dataTransfer.files));
+  await loadRooms(); loadFaq(); loadTesti(); loadSettings();
+});
+
+// ── Salles ────────────────────────────────────────────────
+async function loadRooms() {
+  const { data } = await sb.from('rooms').select('*').order('sort_order');
+  rooms = data || [];
+  document.getElementById('room-pick').innerHTML = rooms.map(r => `<button data-id="${r.id}" onclick="pickRoom('${r.id}')" style="border-left:4px solid ${r.color||'#7c6af7'}">${escHtml(r.name)}${r.is_published===false?' <span style="color:var(--red)">●</span>':''}</button>`).join('');
+  if (rooms.length) pickRoom(activeRoom?.id || rooms[0].id);
+}
+function pickRoom(id) {
+  activeRoom = rooms.find(r => r.id === id); if (!activeRoom) return;
+  document.querySelectorAll('#room-pick button').forEach(b => b.classList.toggle('active', b.dataset.id === id));
+  document.getElementById('r-pub').value = String(activeRoom.is_published !== false);
+  document.getElementById('r-tagline').value = activeRoom.tagline || '';
+  document.getElementById('r-desc').value = activeRoom.long_desc || '';
+  document.getElementById('r-theme').value = activeRoom.theme || '';
+  document.getElementById('r-points').value = activeRoom.points_per_key ?? 100;
+  setDiff(activeRoom.difficulty || 3);
+  const cov = document.getElementById('r-cover');
+  cov.style.backgroundImage = activeRoom.cover_url ? `url(${activeRoom.cover_url})` : ''; cov.textContent = activeRoom.cover_url ? '' : 'Aucune image';
+  loadGallery();
+}
+function setDiff(n) { difficulty = n; document.querySelectorAll('#r-diff i').forEach((i,idx) => i.classList.toggle('on', idx < n)); }
+async function saveRoom() {
+  if (!activeRoom) return;
+  const payload = { is_published: document.getElementById('r-pub').value === 'true', tagline: document.getElementById('r-tagline').value.trim(),
+    long_desc: document.getElementById('r-desc').value.trim(), theme: document.getElementById('r-theme').value.trim(),
+    points_per_key: parseInt(document.getElementById('r-points').value) || 0, difficulty };
+  const { error } = await sb.from('rooms').update(payload).eq('id', activeRoom.id);
+  if (error) return toast('Erreur : ' + error.message, 'err');
+  toast('Salle publiée', 'ok'); loadRooms();
+}
+async function uploadFile(file, folder) {
+  if (!file) return null;
+  if (file.size > 4*1024*1024) { toast('Image trop lourde (max 4 Mo)', 'err'); return null; }
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g,'');
+  const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2,7)}.${ext}`;
+  const { error } = await sb.storage.from(BUCKET).upload(path, file, { cacheControl:'31536000', upsert:false, contentType:file.type });
+  if (error) { toast('Upload : ' + error.message, 'err'); return null; }
+  return pubUrl(path);
+}
+async function uploadCover(file) {
+  const url = await uploadFile(file, `rooms/${activeRoom.id}/cover`); if (!url) return;
+  const { error } = await sb.from('rooms').update({ cover_url: url }).eq('id', activeRoom.id);
+  if (error) return toast(error.message, 'err');
+  toast('Image principale mise à jour', 'ok'); loadRooms();
+}
+async function loadGallery() {
+  const { data } = await sb.from('room_gallery').select('*').eq('room_id', activeRoom.id).order('sort_order');
+  const el = document.getElementById('gallery');
+  el.innerHTML = (data||[]).map(g => `<div class="gimg ui-rise"><img src="${g.image_url}" alt=""><button class="del" onclick="delGallery('${g.id}')">✕</button>${g.caption?`<div class="cap">${escHtml(g.caption)}</div>`:''}</div>`).join('') || '<div class="text-muted" style="font-size:12px;">Aucune image dans la galerie.</div>';
+}
+async function uploadGallery(files) {
+  if (!files || !files.length) return;
+  const { count } = await sb.from('room_gallery').select('id', { count:'exact', head:true }).eq('room_id', activeRoom.id);
+  let order = count || 0, ok = 0;
+  for (const f of files) {
+    const url = await uploadFile(f, `rooms/${activeRoom.id}/gallery`); if (!url) continue;
+    const { error } = await sb.from('room_gallery').insert([{ room_id: activeRoom.id, image_url: url, sort_order: order++ }]);
+    if (!error) ok++;
+  }
+  toast(`${ok} image(s) ajoutée(s)`, 'ok'); loadGallery();
+}
+async function delGallery(id) {
+  if (!confirm('Retirer cette image ?')) return;
+  await sb.from('room_gallery').delete().eq('id', id); loadGallery();
+}
+
+// ── FAQ ───────────────────────────────────────────────────
+async function loadFaq() {
+  const { data } = await sb.from('site_faq').select('*').order('sort_order');
+  document.getElementById('faq-list').innerHTML = (data||[]).map(f => `
+    <div class="faq-row"><span class="text-muted">${f.sort_order}</span><div><div class="q">${escHtml(f.question)} ${f.is_published?'':'<span class="text-err">(masquée)</span>'}</div><div class="a">${escHtml(f.answer)}</div></div>
+    <div><button class="btn btn-ghost btn-sm" onclick='editFaq(${JSON.stringify(f).replace(/'/g,"&#39;")})'>✎</button> <button class="btn btn-ghost btn-sm" onclick="delFaq('${f.id}')">✕</button></div></div>`).join('') || '<div class="text-muted">Aucune question.</div>';
+}
+function editFaq(f) { document.getElementById('faq-id').value = f.id; document.getElementById('faq-q').value = f.question; document.getElementById('faq-a').value = f.answer; document.getElementById('faq-o').value = f.sort_order; document.getElementById('faq-p').value = String(f.is_published); document.getElementById('faq-form-title').textContent = 'Modifier la question'; }
+function resetFaq() { ['faq-id','faq-q','faq-a'].forEach(i => document.getElementById(i).value=''); document.getElementById('faq-o').value = 0; document.getElementById('faq-form-title').textContent = 'Nouvelle question'; }
+async function saveFaq() {
+  const id = document.getElementById('faq-id').value;
+  const p = { question: document.getElementById('faq-q').value.trim(), answer: document.getElementById('faq-a').value.trim(), sort_order: parseInt(document.getElementById('faq-o').value)||0, is_published: document.getElementById('faq-p').value === 'true' };
+  if (!p.question || !p.answer) return toast('Question et réponse obligatoires', 'err');
+  const { error } = id ? await sb.from('site_faq').update(p).eq('id', id) : await sb.from('site_faq').insert([p]);
+  if (error) return toast(error.message, 'err');
+  toast('Enregistré', 'ok'); resetFaq(); loadFaq();
+}
+async function delFaq(id) { if (!confirm('Supprimer ?')) return; await sb.from('site_faq').delete().eq('id', id); loadFaq(); }
+
+// ── Témoignages ───────────────────────────────────────────
+async function loadTesti() {
+  const { data } = await sb.from('site_testimonials').select('*').order('created_at', { ascending:false });
+  document.getElementById('testi-list').innerHTML = (data||[]).map(t => `<div class="faq-row" style="grid-template-columns:1fr auto;"><div><div class="q">${escHtml(t.author)}</div><div class="a">« ${escHtml(t.quote)} »</div></div>
+    <div><button class="btn btn-ghost btn-sm" onclick="togTesti('${t.id}',${t.is_published})">${t.is_published?'Masquer':'Publier'}</button> <button class="btn btn-ghost btn-sm" onclick="delTesti('${t.id}')">✕</button></div></div>`).join('') || '<div class="text-muted">Aucun témoignage.</div>';
+}
+async function saveTesti() {
+  const p = { author: document.getElementById('t-author').value.trim(), quote: document.getElementById('t-quote').value.trim() };
+  if (!p.author || !p.quote) return toast('Auteur et citation obligatoires', 'err');
+  const { error } = await sb.from('site_testimonials').insert([p]); if (error) return toast(error.message, 'err');
+  document.getElementById('t-author').value = ''; document.getElementById('t-quote').value = ''; toast('Publié', 'ok'); loadTesti();
+}
+async function togTesti(id, cur) { await sb.from('site_testimonials').update({ is_published: !cur }).eq('id', id); loadTesti(); }
+async function delTesti(id) { if (!confirm('Supprimer ?')) return; await sb.from('site_testimonials').delete().eq('id', id); loadTesti(); }
+
+// ── Réglages ──────────────────────────────────────────────
+const DAYS = [['lun','Lundi'],['mar','Mardi'],['mer','Mercredi'],['jeu','Jeudi'],['ven','Vendredi'],['sam','Samedi'],['dim','Dimanche']];
+let settings = {};
+async function loadSettings() {
+  const { data } = await sb.from('site_settings').select('*');
+  (data||[]).forEach(r => settings[r.key] = r.value);
+  const h = settings.hero || {}, c = settings.contact || {}, hr = settings.hours || {};
+  document.getElementById('s-title1').value = h.title_1 || ''; document.getElementById('s-title2').value = h.title_2 || ''; document.getElementById('s-sub').value = h.subtitle || '';
+  document.getElementById('s-phone').value = c.phone || ''; document.getElementById('s-email').value = c.email || ''; document.getElementById('s-address').value = c.address || '';
+  document.getElementById('s-insta').value = c.instagram || ''; document.getElementById('s-fb').value = c.facebook || '';
+  document.getElementById('hours-fields').innerHTML = DAYS.map(([k,l]) => `<div class="field-row"><div class="field" style="flex:0 0 110px;"><label>${l}</label></div><div class="field"><input id="h-${k}" value="${escHtml(hr[k]||'')}" placeholder="12h–00h ou fermé"></div></div>`).join('');
+}
+async function upsert(key, value) {
+  const { error } = await sb.from('site_settings').upsert({ key, value, updated_at: new Date().toISOString(), updated_by: currentUser.display_name });
+  if (error) toast(error.message, 'err'); return !error;
+}
+async function saveSettings() {
+  const ok1 = await upsert('hero', { title_1: document.getElementById('s-title1').value.trim(), title_2: document.getElementById('s-title2').value.trim(), subtitle: document.getElementById('s-sub').value.trim() });
+  const ok2 = await upsert('contact', { phone: document.getElementById('s-phone').value.trim(), email: document.getElementById('s-email').value.trim(), address: document.getElementById('s-address').value.trim(), instagram: document.getElementById('s-insta').value.trim(), facebook: document.getElementById('s-fb').value.trim() });
+  if (ok1 && ok2) toast('Textes publiés', 'ok');
+}
+async function saveHours() {
+  const v = {}; DAYS.forEach(([k]) => v[k] = document.getElementById('h-'+k).value.trim());
+  if (await upsert('hours', v)) toast('Horaires publiés', 'ok');
+}
+function escHtml(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+</script>
+</body>
+</html>

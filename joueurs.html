@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Joueurs &amp; classement — Enigma</title>
+  <link rel="stylesheet" href="shared/style.css">
+  <link rel="stylesheet" href="shared/ui.css">
+  <style>
+    .layout { display:grid; grid-template-columns: 440px 1fr; gap:16px; align-items:start; }
+    @media (max-width:960px){ .layout{ grid-template-columns:1fr; } }
+    .steps { display:flex; gap:6px; margin-bottom:16px; }
+    .step { flex:1; height:3px; background:var(--border2); border-radius:2px; transition:background .3s; }
+    .step.on { background:var(--purple); }
+    .search-res { max-height:220px; overflow:auto; border:1px solid var(--border); border-radius:8px; margin-top:6px; }
+    .sr { padding:9px 12px; cursor:pointer; font-size:13px; display:flex; justify-content:space-between; border-bottom:1px solid var(--border); }
+    .sr:hover { background:var(--bg3); } .sr code { color:var(--cyan); font-size:11px; }
+    .members { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+    .member { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:20px; background:var(--bg3); border:1px solid var(--border2); font-size:12px; }
+    .member button { border:none; background:none; color:var(--red); cursor:pointer; }
+    .keys-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:8px; margin-top:8px; }
+    .keybtn { padding:10px; border-radius:8px; border:1px solid var(--border2); background:var(--bg3); cursor:pointer; text-align:center; font-size:12px; color:var(--text2); transition:all .15s; }
+    .keybtn.on { border-color:var(--yellow); background:rgba(250,204,21,.12); color:var(--yellow); }
+    .keybtn .who { display:block; font-size:10px; margin-top:3px; color:var(--text3); }
+    .tabs { display:flex; gap:6px; margin-bottom:12px; border-bottom:1px solid var(--border); }
+    .tab { padding:9px 14px; cursor:pointer; color:var(--text2); font-size:13px; border-bottom:2px solid transparent; margin-bottom:-1px; }
+    .tab.active { color:var(--text); border-color:var(--purple); }
+    .tab-panel { display:none; } .tab-panel.active { display:block; animation: ui-fade .3s ease; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th { text-align:left; font-size:10px; text-transform:uppercase; color:var(--text3); padding:8px; border-bottom:1px solid var(--border); }
+    td { padding:9px 8px; border-bottom:1px solid var(--border); }
+    .rk { color:var(--text3); width:34px; } .pt { color:var(--yellow); font-weight:700; text-align:right; }
+    .bar { height:4px; background:var(--border); border-radius:2px; overflow:hidden; } .bar i { display:block; height:100%; background:linear-gradient(90deg,var(--purple),var(--cyan)); width:0; transition:width 1s cubic-bezier(.2,.7,.2,1); }
+    .code-big { font-family:ui-monospace,monospace; font-size:22px; letter-spacing:.1em; color:var(--cyan); }
+  </style>
+</head>
+<body>
+<nav class="navbar">
+  <a class="navbar-brand" href="caisse.html">Enigma <span>Escape Game</span></a>
+  <a class="nav-link" href="caisse.html">🎫 Caisse</a>
+  <a class="nav-link" href="reservations.html">🌐 Réservations</a>
+  <a class="nav-link active" href="joueurs.html">🏆 Joueurs</a>
+  <a class="nav-link" href="depenses.html">💸 Dépenses</a>
+  <a class="nav-link" href="planning.html">📅 Planning</a>
+  <a class="nav-link hidden" id="nav-rapprochements" href="rapprochements.html">📊 Rapprochements</a>
+  <a class="nav-link hidden" id="nav-admin" href="admin.html">⚙️ Admin</a>
+  <a class="nav-link hidden" id="nav-site" href="site.html">🖥️ Site public</a>
+  <span id="nav-user" style="font-size:11px;color:var(--text3);margin-left:auto;padding:0 12px;"></span>
+  <button class="btn btn-ghost btn-sm" onclick="logout()">Déconnexion</button>
+</nav>
+<div id="toast-container"></div>
+
+<div class="page">
+  <div class="page-title">🏆 Joueurs &amp; classement</div>
+  <div class="layout">
+
+    <!-- ── Enregistrer une fin de partie ─────────────────── -->
+    <div class="card">
+      <div class="card-title">Fin de partie — enregistrer les clés</div>
+      <div class="steps"><div class="step on" id="st1"></div><div class="step" id="st2"></div><div class="step" id="st3"></div></div>
+
+      <div class="field-row">
+        <div class="field"><label>Salle</label><select id="g-room" onchange="renderKeys()"></select></div>
+        <div class="field"><label>Date</label><input type="date" id="g-date"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Créneau</label><input id="g-slot" placeholder="18:30"></div>
+        <div class="field"><label>Mode extrême</label><select id="g-ext"><option value="false">Non</option><option value="true">Oui</option></select></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Sortis à temps ?</label><select id="g-fin"><option value="true">Oui</option><option value="false">Non</option></select></div>
+        <div class="field"><label>Temps restant (mm:ss)</label><input id="g-left" placeholder="07:42"></div>
+      </div>
+
+      <div class="field"><label>Équipe (nom, nouveau ou existant)</label><input id="g-team" list="teams-dl" placeholder="Les Insomniaques"><datalist id="teams-dl"></datalist></div>
+
+      <div class="field"><label>Joueurs présents (code joueur, nom ou téléphone)</label>
+        <input id="p-search" placeholder="ENG-4F7K, Aïcha, 07…" autocomplete="off">
+        <div class="search-res hidden" id="p-results"></div>
+        <div class="members" id="members"></div>
+        <p class="text-muted" style="font-size:11px;margin-top:6px;">Le joueur n'a pas de compte ? Il le crée sur le site (enigma.ci → Mon compte) et obtient son code. Vous pouvez enregistrer les clés sans compte : elles compteront pour l'équipe seulement.</p>
+      </div>
+
+      <div class="field"><label>Clés rapportées <span class="text-muted">(cliquez pour attribuer, re-cliquez pour changer de joueur)</span></label>
+        <div class="keys-grid" id="keys"></div>
+      </div>
+
+      <button class="btn btn-primary btn-full" onclick="saveGame()">💾 Enregistrer la partie</button>
+    </div>
+
+    <!-- ── Classements ───────────────────────────────────── -->
+    <div>
+      <div class="stat-grid" id="stats"></div>
+      <div class="card">
+        <div class="tabs">
+          <div class="tab active" data-tab="players">Joueurs</div>
+          <div class="tab" data-tab="teams">Équipes</div>
+          <div class="tab" data-tab="houdini">Temps Houdini</div>
+          <div class="tab" data-tab="recent">Dernières parties</div>
+        </div>
+        <div id="tab-players" class="tab-panel active"><table><thead><tr><th>#</th><th>Joueur</th><th>Code</th><th>Équipe</th><th>Clés</th><th></th><th style="text-align:right">Points</th></tr></thead><tbody id="tb-players"></tbody></table></div>
+        <div id="tab-teams" class="tab-panel"><table><thead><tr><th>#</th><th>Équipe</th><th>Membres</th><th>Salles</th><th>Clés</th><th></th><th style="text-align:right">Points</th></tr></thead><tbody id="tb-teams"></tbody></table></div>
+        <div id="tab-houdini" class="tab-panel">
+          <div class="flex-between" style="margin-bottom:10px;"><select id="h-room" style="width:220px;" onchange="renderHoudini()"></select><span class="text-muted" style="font-size:11px;">Importé par houdini_sync.py depuis les postes GM</span></div>
+          <table><thead><tr><th>#</th><th>Équipe</th><th>Salle</th><th>Temps restant</th><th>Score</th><th>Poste</th><th>Date</th></tr></thead><tbody id="tb-houdini"></tbody></table>
+        </div>
+        <div id="tab-recent" class="tab-panel"><table><thead><tr><th>Date</th><th>Salle</th><th>Équipe</th><th>Clés</th><th>Sortis</th><th>Par</th><th></th></tr></thead><tbody id="tb-recent"></tbody></table></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="shared/config.js"></script>
+<script src="shared/auth.js"></script>
+<script src="shared/ui.js"></script>
+<script>
+let rooms = [], teams = [], members = [], keys = [], houdini = [];
+const KEYS_PER_ROOM = 6;   // nombre de clés cachées par salle (adaptable : ajoutez une colonne rooms.keys_count si besoin)
+
+window.addEventListener('load', async () => {
+  try { await requireAuth(); } catch(e) { return; }
+  document.getElementById('g-date').value = new Date().toISOString().slice(0,10);
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('.tab,.tab-panel').forEach(x => x.classList.remove('active')); t.classList.add('active'); document.getElementById('tab-'+t.dataset.tab).classList.add('active');
+  }));
+  const [{ data:r }, { data:t }] = await Promise.all([sb.from('rooms').select('id,name,points_per_key,has_extreme_mode').eq('is_active',true).order('sort_order'), sb.from('teams').select('id,name').order('name')]);
+  rooms = r || []; teams = t || [];
+  document.getElementById('g-room').innerHTML = rooms.map(x => `<option value="${x.id}">${escHtml(x.name)}</option>`).join('');
+  document.getElementById('h-room').innerHTML = '<option value="">Toutes les salles</option>' + rooms.map(x => `<option>${escHtml(x.name)}</option>`).join('');
+  document.getElementById('teams-dl').innerHTML = teams.map(x => `<option value="${escHtml(x.name)}">`).join('');
+  renderKeys(); loadBoards();
+  ['g-team','p-search'].forEach(id => document.getElementById(id).addEventListener('input', updateSteps));
+});
+
+// ── Recherche joueurs ────────────────────────────────────
+let searchT;
+document.getElementById('p-search').addEventListener('input', e => {
+  clearTimeout(searchT); const q = e.target.value.trim(); const box = document.getElementById('p-results');
+  if (q.length < 2) { box.classList.add('hidden'); return; }
+  searchT = setTimeout(async () => {
+    const { data } = await sb.from('players').select('id,display_name,player_code,phone').or(`display_name.ilike.%${q}%,player_code.ilike.%${q}%,phone.ilike.%${q}%`).limit(8);
+    box.innerHTML = (data||[]).map(p => `<div class="sr" onclick='addMember(${JSON.stringify(p)})'><span>${escHtml(p.display_name)}</span><code>${p.player_code||''}</code></div>`).join('') || '<div class="sr text-muted">Aucun joueur trouvé</div>';
+    box.classList.remove('hidden');
+  }, 250);
+});
+function addMember(p) {
+  if (!members.find(m => m.id === p.id)) members.push(p);
+  document.getElementById('p-search').value = ''; document.getElementById('p-results').classList.add('hidden');
+  renderMembers(); renderKeys(); updateSteps();
+}
+function removeMember(id) { members = members.filter(m => m.id !== id); keys.forEach(k => { if (k.player_id === id) k.player_id = null; }); renderMembers(); renderKeys(); }
+function renderMembers() { document.getElementById('members').innerHTML = members.map(m => `<span class="member">${escHtml(m.display_name)} <code style="color:var(--cyan)">${m.player_code||''}</code><button onclick="removeMember('${m.id}')">✕</button></span>`).join(''); }
+
+// ── Clés ─────────────────────────────────────────────────
+function roomCode(name){ return name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9]/g,'').slice(0,3).toUpperCase(); }
+function renderKeys() {
+  const room = rooms.find(r => r.id === document.getElementById('g-room').value); if (!room) return;
+  if (!keys.length || keys[0].room !== room.id) keys = Array.from({length:KEYS_PER_ROOM}, (_,i) => ({ room:room.id, code:`${roomCode(room.name)}-K${i+1}`, found:false, player_id:null }));
+  document.getElementById('keys').innerHTML = keys.map((k,i) => {
+    const who = members.find(m => m.id === k.player_id);
+    return `<div class="keybtn ${k.found?'on':''}" onclick="cycleKey(${i})">🔑 ${k.code}<span class="who">${k.found ? (who ? escHtml(who.display_name) : 'équipe') : 'non trouvée'}</span></div>`;
+  }).join('');
+  updateSteps();
+}
+// clic : non trouvée → équipe → joueur 1 → joueur 2 … → non trouvée
+function cycleKey(i) {
+  const k = keys[i];
+  if (!k.found) { k.found = true; k.player_id = members[0]?.id || null; }
+  else { const idx = members.findIndex(m => m.id === k.player_id); if (idx === -1 && members.length) k.player_id = members[0].id; else if (idx < members.length - 1) k.player_id = members[idx+1].id; else { k.found = false; k.player_id = null; } }
+  renderKeys();
+}
+function updateSteps() {
+  document.getElementById('st2').classList.toggle('on', !!document.getElementById('g-team').value.trim() || members.length > 0);
+  document.getElementById('st3').classList.toggle('on', keys.some(k => k.found));
+}
+
+// ── Sauvegarde ───────────────────────────────────────────
+async function saveGame() {
+  const roomId = document.getElementById('g-room').value, room = rooms.find(r => r.id === roomId);
+  const teamName = document.getElementById('g-team').value.trim();
+  if (!teamName && !members.length) return toast("Indiquez une équipe ou au moins un joueur", 'err');
+  let teamId = null;
+  if (teamName) {
+    let t = teams.find(x => x.name.toLowerCase() === teamName.toLowerCase());
+    if (!t) { const { data, error } = await sb.from('teams').insert([{ name: teamName, created_by: members[0]?.id || null }]).select().single(); if (error) return toast(error.message, 'err'); t = data; teams.push(t); }
+    teamId = t.id;
+    if (members.length) await sb.from('team_members').upsert(members.map(m => ({ team_id: teamId, player_id: m.id })), { onConflict:'team_id,player_id', ignoreDuplicates:true });
+  }
+  const left = document.getElementById('g-left').value.trim(); const [mm,ss] = left.split(':').map(Number);
+  const session = { room_id: roomId, team_id: teamId, team_name: teamName || null, session_date: document.getElementById('g-date').value, time_slot: document.getElementById('g-slot').value.trim() || null,
+    finished: document.getElementById('g-fin').value === 'true', extreme_mode: document.getElementById('g-ext').value === 'true',
+    time_left_seconds: isNaN(mm) ? null : (mm*60 + (ss||0)), recorded_by: currentUser.display_name };
+  const { data: gs, error } = await sb.from('game_sessions').insert([session]).select().single();
+  if (error) return toast(error.message, 'err');
+  const base = room.points_per_key || 100, mult = (session.extreme_mode ? 1.5 : 1) * (session.finished ? 1.2 : 1);
+  const finds = keys.filter(k => k.found).map(k => ({ session_id: gs.id, player_id: k.player_id, key_code: k.code, points: Math.round(base*mult), recorded_by: currentUser.display_name }));
+  if (finds.length) { const { error: e2 } = await sb.from('key_finds').insert(finds); if (e2) return toast(e2.message, 'err'); }
+  toast(`Partie enregistrée — ${finds.length} clé(s), ${finds.length*Math.round(base*mult)} pts`, 'ok');
+  if (window.uiConfetti) uiConfetti();
+  members = []; keys = []; document.getElementById('g-team').value = ''; document.getElementById('g-left').value = ''; renderMembers(); renderKeys(); loadBoards();
+}
+
+// ── Tableaux ─────────────────────────────────────────────
+async function loadBoards() {
+  const [{ data:p }, { data:t }, { data:h }, { data:rc }, { count:np }, { count:nk }] = await Promise.all([
+    sb.from('leaderboard_players').select('*').limit(50), sb.from('leaderboard_teams').select('*').limit(50),
+    sb.from('leaderboard_houdini').select('*').limit(300),
+    sb.from('game_sessions').select('*, rooms(name), key_finds(id)').order('created_at',{ascending:false}).limit(30),
+    sb.from('players').select('id',{count:'exact',head:true}), sb.from('key_finds').select('id',{count:'exact',head:true})
+  ]);
+  houdini = h || [];
+  const maxP = Math.max(1, ...(p||[]).map(x=>x.points)), maxT = Math.max(1, ...(t||[]).map(x=>x.points));
+  document.getElementById('tb-players').innerHTML = (p||[]).map((x,i) => `<tr class="ui-rise"><td class="rk">${i+1}</td><td><b>${escHtml(x.display_name)}</b></td><td><code style="color:var(--cyan)">${x.player_code||''}</code></td><td>${escHtml(x.team_name||'—')}</td><td>${x.keys_found}</td><td style="width:120px"><div class="bar"><i data-w="${x.points/maxP*100}"></i></div></td><td class="pt">${x.points}</td></tr>`).join('') || '<tr><td colspan="7" class="text-muted">Aucun joueur pour le moment.</td></tr>';
+  document.getElementById('tb-teams').innerHTML = (t||[]).map((x,i) => `<tr class="ui-rise"><td class="rk">${i+1}</td><td><b>${escHtml(x.team_name)}</b></td><td>${x.members}</td><td>${x.rooms_played}</td><td>${x.keys_found}</td><td style="width:120px"><div class="bar"><i data-w="${x.points/maxT*100}"></i></div></td><td class="pt">${x.points}</td></tr>`).join('') || '<tr><td colspan="7" class="text-muted">Aucune équipe.</td></tr>';
+  document.getElementById('tb-recent').innerHTML = (rc||[]).map(g => `<tr><td>${g.session_date} ${g.time_slot||''}</td><td>${escHtml(g.rooms?.name||'')}</td><td>${escHtml(g.team_name||'—')}</td><td>${g.key_finds?.length||0}</td><td>${g.finished?'✅':'❌'}</td><td class="text-muted">${escHtml(g.recorded_by||'')}</td><td>${isAdmin()?`<button class="btn btn-ghost btn-sm" onclick="delGame('${g.id}')">✕</button>`:''}</td></tr>`).join('') || '<tr><td colspan="7" class="text-muted">Aucune partie.</td></tr>';
+  document.getElementById('stats').innerHTML = [['Joueurs inscrits', np||0], ['Clés trouvées', nk||0], ['Équipes', (t||[]).length], ['Parties Houdini', houdini.length]].map(([l,v]) => `<div class="stat-card"><div class="stat-label">${l}</div><div class="stat-value" data-count="${v}">0</div></div>`).join('');
+  renderHoudini(); if (window.uiCountUp) uiCountUp();
+  requestAnimationFrame(() => document.querySelectorAll('.bar i').forEach(b => b.style.width = b.dataset.w + '%'));
+}
+function toSec(s){ const p = String(s||'').split(':').map(Number); return p.length>=2 ? p[0]*60+p[1] + (p[2]||0)/60 : Number(s)||0; }
+function renderHoudini() {
+  const f = document.getElementById('h-room').value;
+  let list = houdini.filter(x => !f || x.room_name === f);
+  list.sort((a,b) => toSec(b.remaining_time) - toSec(a.remaining_time));
+  document.getElementById('tb-houdini').innerHTML = list.slice(0,50).map((x,i) => `<tr><td class="rk">${i+1}</td><td><b>${escHtml(x.team_name)}</b></td><td>${escHtml(x.room_name)}</td><td style="color:var(--green)">${escHtml(x.remaining_time||'')}</td><td>${escHtml(x.score||'')}</td><td class="text-muted">${escHtml(x.station)}</td><td class="text-muted">${x.played_at ? new Date(x.played_at).toLocaleDateString('fr-FR') : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="text-muted">Aucun score importé. Lancez houdini_sync.py sur les postes GM.</td></tr>';
+}
+async function delGame(id) { if (!confirm('Supprimer cette partie et ses clés ?')) return; await sb.from('game_sessions').delete().eq('id', id); loadBoards(); }
+function escHtml(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+</script>
+</body>
+</html>
