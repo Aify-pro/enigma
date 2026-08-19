@@ -30,6 +30,9 @@
     .empty { text-align:center; color:var(--text3); padding:40px 0; font-size:13px; }
     .pulse { animation: pulse 1.6s ease-in-out infinite; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+    .mode-tag { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:2px 7px; border-radius:20px; background:rgba(124,106,247,.15); color:var(--purple); }
+    .mode-tag.extreme { background:rgba(248,113,113,.15); color:var(--red); }
+    .mode-tag.moyen { background:rgba(250,204,21,.15); color:var(--yellow); }
   </style>
 </head>
 <body>
@@ -64,12 +67,35 @@
   </div>
 </div>
 
+<div class="modal-overlay hidden" id="depositModal">
+  <div class="modal-box">
+    <div class="modal-title">💰 Confirmer l'avance</div>
+    <div id="depositSummary" class="text-muted" style="font-size:13px;margin-bottom:16px;line-height:1.7;"></div>
+    <div class="field-row">
+      <div class="field" style="flex:2;"><label>Montant de l'avance (FCFA) *</label><input type="number" id="deposit-amount" min="1" value="15000" /></div>
+      <div class="field"><label>Mode de paiement</label>
+        <select id="deposit-payment">
+          <option value="especes">Espèces</option>
+          <option value="mobile">Mobile Money</option>
+          <option value="cheque">Chèque</option>
+          <option value="virement">Virement</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:18px;">
+      <button class="btn btn-ghost btn-full" onclick="closeDepositModal()">Annuler</button>
+      <button class="btn btn-primary btn-full" id="deposit-confirm-btn" onclick="confirmDeposit()">✓ Confirmer le paiement</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="shared/config.js"></script>
 <script src="shared/auth.js"></script>
 <script>
 const LABELS = { pending:'En attente', deposit_received:'Acompte reçu', confirmed:'Confirmée', cancelled:'Annulée', no_show:'Absent' };
-let rows = [], rooms = {}, filter = 'pending', selectedId = null;
+const MODE_LABELS = { normale:'Normale', moyen:'Moyen', extreme:'Extreme' };
+let rows = [], rooms = {}, filter = 'pending', selectedId = null, depositTargetId = null;
 
 window.addEventListener('load', async () => {
   try { await requireAuth(); } catch(e) { return; }
@@ -123,8 +149,8 @@ function render() {
   el.innerHTML = list.map(r => `
     <div class="req ui-rise ${r.id === selectedId ? 'selected' : ''}" onclick="showDetail('${r.id}')">
       <div class="when">${r.time_slot}<small>${fmtDate(r.session_date)}</small></div>
-      <div class="who"><span style="color:${rooms[r.room_id]?.color||'#7c6af7'}">●</span> <b>${escHtml(r.client_name)}</b> · ${r.num_players} joueurs${r.extreme_mode ? ' · <span style="color:var(--pink)">extrême</span>' : ''}
-        <div class="sub">${escHtml(rooms[r.room_id]?.name || '?')} · ${escHtml(r.client_phone)} · reçu ${new Date(r.created_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</div></div>
+      <div class="who"><span style="color:${rooms[r.room_id]?.color||'#7c6af7'}">●</span> <b>${escHtml(r.team_name || r.client_name)}</b> · ${r.num_players} joueurs · <span class="mode-tag ${r.game_mode||''}">${MODE_LABELS[r.game_mode] || 'Normale'}</span>
+        <div class="sub">${escHtml(rooms[r.room_id]?.name || '?')} · ${escHtml(r.client_name)} · ${escHtml(r.client_phone)} · reçu ${new Date(r.created_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</div></div>
       <span class="badge st-${r.status}">${LABELS[r.status]}</span>
     </div>`).join('');
 }
@@ -136,34 +162,129 @@ function showDetail(id) {
   const kv = (k,v) => `<div class="kv"><span>${k}</span><b>${v ?? '—'}</b></div>`;
   let actions = '';
   if (r.status === 'pending') actions = `
-      <button class="btn btn-primary btn-full mt-2" onclick="setStatus('${r.id}','deposit_received')">💰 Acompte reçu → bloquer le créneau</button>
+      <button class="btn btn-primary btn-full mt-2" onclick="openDepositModal('${r.id}')">💰 Valider → saisir l'avance</button>
       <button class="btn btn-ghost btn-full mt-1" onclick="setStatus('${r.id}','cancelled')">Annuler la demande</button>`;
   else if (r.status === 'deposit_received') actions = `
-      <button class="btn btn-success btn-full mt-2" onclick="setStatus('${r.id}','confirmed')">✓ Client arrivé / partie confirmée</button>
+      <button class="btn btn-success btn-full mt-2" onclick="confirmArrival('${r.id}')">✓ Client arrivé / partie confirmée</button>
       <button class="btn btn-ghost btn-full mt-1" onclick="setStatus('${r.id}','no_show')">Client absent</button>
       <button class="btn btn-ghost btn-full mt-1" onclick="setStatus('${r.id}','cancelled')">Annuler (libérer le créneau)</button>`;
-  else if (r.status === 'confirmed') actions = `<div class="notice-ok mt-2">Partie confirmée. Encaissez le solde à la caisse comme d'habitude.</div>`;
+  else if (r.status === 'confirmed') actions = `
+      <button class="btn btn-primary btn-full mt-2" onclick="window.open('caisse.html?res=${r.id}','_blank')">🧾 Ouvrir à la caisse</button>
+      <div class="notice-ok mt-2">Partie confirmée. Encaissez le solde à la caisse — la session est préremplie automatiquement.</div>`;
   else actions = `<button class="btn btn-ghost btn-full mt-2" onclick="setStatus('${r.id}','pending')">Réactiver la demande</button>`;
 
+  const modeNote = r.game_mode === 'extreme' ? ` · <span style="color:var(--red)">+${fmtXof(room.extreme_mode_price_xof||10000)} FCFA</span>` : '';
+
   document.getElementById('detail-body').innerHTML = `
-    <div style="font-size:16px;font-weight:700;margin-bottom:10px;">${escHtml(r.client_name)} <span class="badge st-${r.status}" style="margin-left:6px;">${LABELS[r.status]}</span></div>
+    <div style="font-size:16px;font-weight:700;margin-bottom:10px;">${escHtml(r.team_name || r.client_name)} <span class="badge st-${r.status}" style="margin-left:6px;">${LABELS[r.status]}</span></div>
+    ${kv('Équipe', escHtml(r.team_name || '—'))}
+    ${kv('Contact', escHtml(r.client_name))}
     ${kv('Salle', escHtml(room.name))}
     ${kv('Date', fmtDate(r.session_date))}
     ${kv('Créneau', r.time_slot)}
-    ${kv('Joueurs', r.num_players + (r.extreme_mode ? ' · mode extrême' : ''))}
+    ${kv('Joueurs', r.num_players)}
+    ${kv('Mode de jeu', `<span class="mode-tag ${r.game_mode||''}">${MODE_LABELS[r.game_mode] || 'Normale'}</span>${modeNote}`)}
     ${kv('Téléphone', `<a href="tel:${r.client_phone}" style="color:var(--cyan)">${escHtml(r.client_phone)}</a>`)}
     ${kv('Email', r.client_email ? escHtml(r.client_email) : '—')}
     ${kv('Message', r.message ? escHtml(r.message) : '—')}
     ${kv('Traité par', r.handled_by ? escHtml(r.handled_by) + ' · ' + new Date(r.handled_at).toLocaleString('fr-FR') : '—')}
     ${actions}
-    <p class="text-muted" style="font-size:11px;margin-top:14px;line-height:1.6;">Le créneau n'est bloqué sur le site qu'à l'état <b>Acompte reçu</b> ou <b>Confirmée</b>. Enregistrez l'acompte dans la Caisse (onglet Avances) avec le même nom de client.</p>`;
+    <p class="text-muted" style="font-size:11px;margin-top:14px;line-height:1.6;">Le créneau n'est bloqué sur le site qu'à l'état <b>Acompte reçu</b> ou <b>Confirmée</b>. La validation de l'avance génère automatiquement le bon d'avance et bloque le créneau.</p>`;
 }
+
+function fmtXof(n) { return Number(n||0).toLocaleString('fr-FR'); }
 
 async function setStatus(id, status) {
   const { error } = await sb.from('reservation_requests').update({ status, handled_by: currentUser.display_name, handled_at: new Date().toISOString() }).eq('id', id);
   if (error) return toast('Erreur : ' + error.message, 'err');
   toast('Statut : ' + LABELS[status], 'ok');
   await loadRequests();
+}
+
+// ── Client arrivé : confirme + ouvre la caisse préremplie ──────
+async function confirmArrival(id) {
+  const { error } = await sb.from('reservation_requests').update({ status: 'confirmed', handled_by: currentUser.display_name, handled_at: new Date().toISOString() }).eq('id', id);
+  if (error) return toast('Erreur : ' + error.message, 'err');
+  toast('Partie confirmée — ouverture de la caisse…', 'ok');
+  await loadRequests();
+  window.open('caisse.html?res=' + id, '_blank');
+}
+
+// ── Validation + saisie de l'avance (RPC atomique côté serveur) ─
+function openDepositModal(id) {
+  const r = rows.find(x => x.id === id); if (!r) return;
+  depositTargetId = id;
+  const room = rooms[r.room_id] || {};
+  document.getElementById('depositSummary').innerHTML = `
+    <b>${escHtml(r.team_name || r.client_name)}</b><br>
+    ${escHtml(room.name || '?')} · ${fmtDate(r.session_date)} · ${r.time_slot}<br>
+    Mode : ${MODE_LABELS[r.game_mode] || 'Normale'} · ${r.num_players} joueurs`;
+  document.getElementById('deposit-amount').value = 15000;
+  document.getElementById('deposit-payment').value = 'especes';
+  document.getElementById('depositModal').classList.remove('hidden');
+}
+function closeDepositModal() {
+  depositTargetId = null;
+  document.getElementById('depositModal').classList.add('hidden');
+}
+async function confirmDeposit() {
+  if (!depositTargetId) return;
+  const amount = parseInt(document.getElementById('deposit-amount').value) || 0;
+  const payment = document.getElementById('deposit-payment').value;
+  if (!amount) return toast('Montant requis', 'err');
+  const btn = document.getElementById('deposit-confirm-btn'); btn.disabled = true;
+  const r = rows.find(x => x.id === depositTargetId);
+  try {
+    const { data: advance, error } = await sb.rpc('staff_confirm_deposit', {
+      p_reservation_id: depositTargetId,
+      p_amount_xof: amount,
+      p_operator: currentUser.display_name,
+      p_payment_method: payment
+    });
+    if (error) {
+      toast(error.message.includes('vient d\'être réservé') ? error.message : 'Erreur : ' + error.message, 'err');
+      return;
+    }
+    toast('Avance enregistrée — créneau bloqué', 'ok');
+    closeDepositModal();
+    if (r) printAdvanceVoucher(r, advance, payment);
+    await loadRequests();
+  } finally { btn.disabled = false; }
+}
+
+// ── Impression du bon d'avance ──────────────────────────────────
+function printAdvanceVoucher(r, advance, payment) {
+  const room = rooms[r.room_id] || {};
+  const PAY_LABELS = { especes:'Espèces', mobile:'Mobile Money', cheque:'Chèque', virement:'Virement' };
+  const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Bon d'avance</title>
+  <style>
+    body{font-family:'Courier New',monospace;width:78mm;margin:0 auto;padding:6mm;color:#111;}
+    h1{font-size:14px;text-align:center;margin:0 0 2mm;}
+    .sub{text-align:center;font-size:10px;color:#555;margin-bottom:4mm;}
+    hr{border:none;border-top:1px dashed #999;margin:3mm 0;}
+    .row{display:flex;justify-content:space-between;font-size:12px;margin:1.5mm 0;}
+    .row b{font-weight:700;}
+    .total{font-size:16px;font-weight:700;text-align:center;margin:4mm 0;border:1px solid #111;padding:3mm;}
+    .foot{text-align:center;font-size:10px;color:#555;margin-top:4mm;}
+  </style></head><body>
+    <h1>ENIGMA ESCAPE GAME</h1>
+    <div class="sub">— Bon d'avance —</div>
+    <hr>
+    <div class="row"><span>Équipe</span><b>${escHtml(r.team_name || r.client_name)}</b></div>
+    <div class="row"><span>Client</span><b>${escHtml(r.client_name)}</b></div>
+    <div class="row"><span>Salle</span><b>${escHtml(room.name || '?')}</b></div>
+    <div class="row"><span>Date</span><b>${fmtDate(r.session_date)}</b></div>
+    <div class="row"><span>Créneau</span><b>${r.time_slot}</b></div>
+    <div class="row"><span>Mode de jeu</span><b>${MODE_LABELS[r.game_mode] || 'Normale'}</b></div>
+    <hr>
+    <div class="total">Avance versée<br>${fmtXof(advance.amount_xof)} FCFA</div>
+    <div class="row"><span>Mode de paiement</span><b>${PAY_LABELS[payment] || payment}</b></div>
+    <div class="foot">Bon généré par ${escHtml(currentUser.display_name)}<br>${new Date().toLocaleString('fr-FR')}</div>
+  </body></html>`;
+  const w = window.open('', '_blank', 'width=380,height=600');
+  if (!w) { toast('Autorisez les pop-ups pour imprimer le bon d\'avance', 'err'); return; }
+  w.document.write(html); w.document.close();
+  w.onload = () => { w.focus(); w.print(); };
 }
 
 function escHtml(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }

@@ -151,19 +151,30 @@
         </div>
       </div>
       <div id="price-info" class="info-banner hidden"></div>
-      <!-- Mode extrême — visible seulement si la salle l'autorise -->
-      <div id="extreme-mode-row" class="hidden" style="margin-top:6px;">
-        <button id="btn-extreme" class="btn btn-ghost btn-sm btn-extreme" onclick="toggleExtremeMode()">
-          ⚡ Mode Extrême — +<span id="extreme-price-label">10 000</span> FCFA
-        </button>
+      <!-- Mode de jeu — Extreme n'applique un supplément que si la salle l'autorise -->
+      <div id="game-mode-row" class="hidden" style="margin-top:6px;">
+        <div class="field" style="margin:0;">
+          <label>Mode de jeu</label>
+          <select id="sel-gamemode" onchange="onGameModeChange()">
+            <option value="normale">Normale</option>
+            <option value="moyen">Moyen</option>
+            <option value="extreme" id="opt-extreme">Extreme — + 10 000 FCFA</option>
+          </select>
+        </div>
       </div>
       <hr class="sep">
       <div class="field-row">
         <div class="field">
+          <label>Nom de l'équipe</label>
+          <input type="text" id="inp-team" placeholder="Ex. Les Aventuriers" />
+        </div>
+        <div class="field">
           <label>Nom du client</label>
           <input type="text" id="inp-client" placeholder="Prénom Nom du réservant" />
         </div>
-        <div class="field">
+      </div>
+      <div class="field-row">
+        <div class="field" style="flex:2;">
           <label>Notes</label>
           <input type="text" id="inp-notes" placeholder="Facultatif" />
         </div>
@@ -293,10 +304,11 @@ let products          = [];
 let cart              = [];
 let activeRoom        = null;
 let voucherData       = null;
-let extremeModeActive = false;
+let gameMode          = 'normale';
 let advanceSelected   = null;
 let advancesList      = [];
 let editingAdvanceId  = null;
+let prefillReservation = null;
 
 // ── Init ─────────────────────────────────────────────────────
 window.addEventListener('load', async () => {
@@ -305,9 +317,45 @@ window.addEventListener('load', async () => {
   document.getElementById('adv-date').value = today();
   await Promise.all([loadRooms(), loadProducts()]);
   loadDaySummary();
-  loadAdvances();
+  await loadAdvances();
   updateTotal(0, 0);
+
+  const resId = new URLSearchParams(location.search).get('res');
+  if (resId) await prefillFromReservation(resId);
 });
+
+// ── Préremplissage depuis une réservation validée ("Client arrivé") ──
+async function prefillFromReservation(resId) {
+  const { data: r, error } = await sb.from('reservation_requests').select('*').eq('id', resId).single();
+  if (error || !r) { toast('Réservation introuvable pour préremplissage', 'err'); return; }
+  prefillReservation = r;
+
+  document.getElementById('inp-date').value = r.session_date;
+  document.getElementById('inp-team').value = r.team_name || '';
+  document.getElementById('inp-client').value = r.client_name || '';
+  document.getElementById('inp-notes').value = `Réservation en ligne · ${r.client_phone || ''}`.trim();
+
+  const roomSel = document.getElementById('sel-room');
+  roomSel.value = r.room_id;
+  await onRoomChange();
+
+  document.getElementById('inp-players').value = r.num_players;
+  const slotSel = document.getElementById('sel-slot');
+  if ([...slotSel.options].some(o => o.value === r.time_slot)) slotSel.value = r.time_slot;
+
+  const modeSel = document.getElementById('sel-gamemode');
+  if (modeSel) modeSel.value = r.game_mode || 'normale';
+  onGameModeChange();
+  calcPrice();
+
+  // Sélectionne automatiquement l'avance liée à cette réservation
+  if (r.advance_id) {
+    await loadAdvances();
+    if (advancesList.some(a => a.id === r.advance_id)) selectAdvance(r.advance_id);
+    else toast('Avance liée introuvable dans la liste (déjà utilisée ?)', 'info');
+  }
+  toast('Session préremplie depuis la réservation en ligne', 'ok');
+}
 
 function today() { return new Date().toISOString().slice(0,10); }
 
@@ -328,11 +376,11 @@ function onForfaitPriceChange() {
   updateTotal(val, 0);
 }
 
-// ── Mode extrême ──────────────────────────────────────────────
-function toggleExtremeMode() {
-  if (!activeRoom?.has_extreme_mode) return;
-  extremeModeActive = !extremeModeActive;
-  document.getElementById('btn-extreme').classList.toggle('active', extremeModeActive);
+// ── Mode de jeu ──────────────────────────────────────────────
+function onGameModeChange() {
+  const sel = document.getElementById('sel-gamemode');
+  gameMode = sel ? sel.value : 'normale';
+  if (gameMode === 'extreme' && !activeRoom?.has_extreme_mode) { gameMode = 'normale'; if (sel) sel.value = 'normale'; }
   updateTotal();
 }
 
@@ -383,19 +431,21 @@ async function loadProducts() {
 async function onRoomChange() {
   const roomId = document.getElementById('sel-room').value;
   activeRoom = rooms.find(r => r.id === roomId) || null;
-  extremeModeActive = false;
+  gameMode = 'normale';
   pricingMap = {};
   document.getElementById('sel-slot').innerHTML = '<option value="">— Choisir —</option>';
   document.getElementById('price-info').classList.add('hidden');
-  const extremeRow = document.getElementById('extreme-mode-row');
-  const extremeBtn = document.getElementById('btn-extreme');
-  extremeBtn.classList.remove('active');
-  if (activeRoom?.has_extreme_mode) {
+  const modeRow = document.getElementById('game-mode-row');
+  const modeSel = document.getElementById('sel-gamemode');
+  const optExtreme = document.getElementById('opt-extreme');
+  modeSel.value = 'normale';
+  if (activeRoom) {
     const price = activeRoom.extreme_mode_price_xof || 10000;
-    document.getElementById('extreme-price-label').textContent = price.toLocaleString('fr-FR');
-    extremeRow.classList.remove('hidden');
+    optExtreme.textContent = `Extreme — + ${price.toLocaleString('fr-FR')} FCFA`;
+    optExtreme.disabled = !activeRoom.has_extreme_mode;
+    modeRow.classList.remove('hidden');
   } else {
-    extremeRow.classList.add('hidden');
+    modeRow.classList.add('hidden');
   }
   if (!roomId) { updateTotal(0,0); return; }
   const [slotsRes, pricesRes] = await Promise.all([
@@ -438,7 +488,7 @@ function calcPrice() {
 function updateTotal(baseOvr, extraOvr) {
   const base       = baseOvr  !== undefined ? baseOvr  : _deriveBase();
   const extra      = extraOvr !== undefined ? extraOvr : _deriveExtra();
-  const extremeAmt = extremeModeActive ? (activeRoom?.extreme_mode_price_xof || 10000) : 0;
+  const extremeAmt = gameMode === 'extreme' ? (activeRoom?.extreme_mode_price_xof || 10000) : 0;
   const itemsAmt   = cart.reduce((s,i)=>s+i.total_xof,0);
   const discount   = parseInt(document.getElementById('inp-discount').value)||0;
   const voucherP   = voucherData ? (parseInt(document.getElementById('pay-voucher').value)||0) : 0;
@@ -701,6 +751,7 @@ async function saveSale(doPrint) {
     const op         = currentUser?.display_name || currentUser?.email || 'Système';
     const clientName = document.getElementById('inp-client').value.trim();
 
+    const teamName = document.getElementById('inp-team').value.trim();
     const ticketPayload = {
       ticket_number:       ticketNum,
       session_date:        sessionDate,
@@ -711,6 +762,8 @@ async function saveSale(doPrint) {
       base_price_xof:      s.base,
       extra_price_xof:     s.extra,
       extreme_mode_xof:    s.extremeAmt,
+      game_mode:           activeRoom ? gameMode : null,
+      team_name:           teamName || null,
       discount_xof:        s.discount,
       total_price_xof:     s.total,
       payment_especes_xof: cashPay,
@@ -730,6 +783,11 @@ async function saveSale(doPrint) {
 
     const { data:ticket, error:tErr } = await sb.from('tickets').insert([ticketPayload]).select().single();
     if (tErr) throw tErr;
+
+    // Boucle la réservation en ligne d'origine sur ce ticket, le cas échéant
+    if (prefillReservation) {
+      await sb.from('reservation_requests').update({ ticket_id: ticket.id }).eq('id', prefillReservation.id);
+    }
 
     if (cart.length) {
       await sb.from('ticket_items').insert(cart.map(i=>({
@@ -812,6 +870,7 @@ function buildTicketHTML(ticket, items) {
          </div>`).join('')}</div>`
     : '';
 
+  const MODE_LABELS = { normale:'Normale', moyen:'Moyen', extreme:'Extreme' };
   const hasPriceDetail = ticket.base_price_xof>0 || ticket.extra_price_xof>0
     || (ticket.extreme_mode_xof||0)>0 || items.length>0 || ticket.discount_xof>0;
 
@@ -819,7 +878,8 @@ function buildTicketHTML(ticket, items) {
     <hr class="ticket-sep">
     ${ticket.base_price_xof>0 ? `<div class="ticket-row"><span class="label">Session</span><span class="value">${fmt(ticket.base_price_xof)}</span></div>` : ''}
     ${ticket.extra_price_xof>0 ? `<div class="ticket-row"><span class="label">Supplément</span><span class="value">${fmt(ticket.extra_price_xof)}</span></div>` : ''}
-    ${(ticket.extreme_mode_xof||0)>0 ? `<div class="ticket-row"><span class="label">Mode Extreme</span><span class="value">${fmt(ticket.extreme_mode_xof)}</span></div>` : ''}
+    ${ticket.game_mode ? `<div class="ticket-row"><span class="label">Mode de jeu</span><span class="value">${MODE_LABELS[ticket.game_mode] || ticket.game_mode}</span></div>` : ''}
+    ${(ticket.extreme_mode_xof||0)>0 ? `<div class="ticket-row"><span class="label">Supplément Extreme</span><span class="value">${fmt(ticket.extreme_mode_xof)}</span></div>` : ''}
     ${itemsHTML}
     ${ticket.discount_xof>0 ? `<div class="ticket-row"><span class="label">Remise</span><span class="value">- ${fmt(ticket.discount_xof)}</span></div>` : ''}
     ${(ticket.payment_advance_xof||0)>0 ? `<div class="ticket-row"><span class="label">Avance deduite</span><span class="value">- ${fmt(ticket.payment_advance_xof)}</span></div>` : ''}` : '';
@@ -839,6 +899,7 @@ function buildTicketHTML(ticket, items) {
   const slotLine    = ticket.time_slot    ? `<div class="ticket-row"><span class="label">Creneau</span><span class="value">${ticket.time_slot}</span></div>` : '';
   const playersLine = ticket.num_players>0 ? `<div class="ticket-row"><span class="label">Joueurs</span><span class="value">${ticket.num_players} pers.</span></div>` : '';
   const clientLine  = ticket.client_name  ? `<div class="ticket-row"><span class="label">Client</span><span class="value">${escHtml(ticket.client_name)}</span></div>` : '';
+  const teamLine     = ticket.team_name    ? `<div class="ticket-row"><span class="label">Équipe</span><span class="value">${escHtml(ticket.team_name)}</span></div>` : '';
   const now         = new Date().toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
 
   document.getElementById('ticket-content').innerHTML = `
@@ -855,6 +916,7 @@ function buildTicketHTML(ticket, items) {
     <div class="ticket-row"><span class="label">Date</span><span class="value">${formatDate(ticket.session_date)}</span></div>
     ${slotLine}
     ${playersLine}
+    ${teamLine}
     ${clientLine}
 
     ${priceRows}
@@ -967,6 +1029,7 @@ function resetForm() {
   document.getElementById('sel-slot').innerHTML='<option value="">— Choisir —</option>';
   document.getElementById('inp-date').value=today();
   document.getElementById('inp-players').value='2';
+  document.getElementById('inp-team').value='';
   document.getElementById('inp-client').value='';
   document.getElementById('inp-notes').value='';
   document.getElementById('inp-discount').value='0';
@@ -983,10 +1046,11 @@ function resetForm() {
   document.getElementById('price-info').classList.add('hidden');
   document.getElementById('voucher-info').classList.add('hidden');
   document.getElementById('advance-pay-info').classList.add('hidden');
-  document.getElementById('extreme-mode-row').classList.add('hidden');
-  document.getElementById('btn-extreme').classList.remove('active');
-  activeRoom=null; voucherData=null; advanceSelected=null; extremeModeActive=false; cart=[]; pricingMap={};
+  document.getElementById('game-mode-row').classList.add('hidden');
+  document.getElementById('sel-gamemode').value='normale';
+  activeRoom=null; voucherData=null; advanceSelected=null; gameMode='normale'; prefillReservation=null; cart=[]; pricingMap={};
   renderCart(); updateTotal(0,0);
+  history.replaceState(null, '', location.pathname);
 }
 
 // ── Helpers ───────────────────────────────────────────────────

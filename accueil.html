@@ -248,15 +248,16 @@ async function loadRequests() {
 async function loadUpcoming() {
   const t = today(), d = new Date(); d.setDate(d.getDate() + 7);
   const end = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  const { data } = await sb.from('reservation_requests').select('id,client_name,num_players,session_date,time_slot,status,room_id,extreme_mode')
+  const { data } = await sb.from('reservation_requests').select('id,client_name,team_name,num_players,session_date,time_slot,status,room_id,game_mode')
     .in('status', ['deposit_received', 'confirmed']).gte('session_date', t).lte('session_date', end).order('session_date').order('time_slot').limit(20);
   const el = document.getElementById('upcoming');
   if (!data || !data.length) { el.innerHTML = '<div class="empty-state"><div class="big">📅</div>Aucune partie réservée en ligne dans les 7 prochains jours.</div>'; return; }
+  const MODE_LABELS = { normale:'Normale', moyen:'Moyen', extreme:'Extreme' };
   const rn = id => rooms.find(r => r.id === id) || {};
   el.innerHTML = data.map(x => { const r = rn(x.room_id); return `
     <div class="item ui-rise">
       <div class="when">${shortDate(x.session_date)}<b>${x.time_slot}</b></div>
-      <div class="main"><div><span style="color:${r.color || '#857af5'}">●</span> ${escHtml(r.name || '?')} — ${escHtml(x.client_name)}</div><div class="sub">${x.num_players} joueurs${x.extreme_mode ? ' · mode extrême' : ''}</div></div>
+      <div class="main"><div><span style="color:${r.color || '#857af5'}">●</span> ${escHtml(r.name || '?')} — ${escHtml(x.team_name || x.client_name)}</div><div class="sub">${x.num_players} joueurs · ${MODE_LABELS[x.game_mode] || 'Normale'}</div></div>
       <span class="badge ${REQ_BADGE[x.status]}">${REQ_LABEL[x.status]}</span>
     </div>`; }).join('');
 }
