@@ -33,6 +33,10 @@
     .mode-tag { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:2px 7px; border-radius:20px; background:rgba(124,106,247,.15); color:var(--purple); }
     .mode-tag.extreme { background:rgba(248,113,113,.15); color:var(--red); }
     .mode-tag.moyen { background:rgba(250,204,21,.15); color:var(--yellow); }
+    .blk { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--border); border-radius:8px; margin-bottom:8px; background:var(--bg2); }
+    .blk .info { font-size:13px; min-width:0; }
+    .blk .info b { display:block; font-size:13px; }
+    .blk .info small { color:var(--text3); font-size:11px; display:block; margin-top:2px; }
   </style>
 </head>
 <body>
@@ -63,6 +67,27 @@
     <div class="card" id="detail">
       <div class="card-title">Détail de la demande</div>
       <div id="detail-body" class="text-muted" style="font-size:13px;">Sélectionnez une demande dans la liste.</div>
+    </div>
+  </div>
+
+  <div class="card" id="blockCard" style="margin-top:20px;">
+    <div class="card-title">🚫 Bloquer des créneaux</div>
+    <div class="layout" style="grid-template-columns: 340px 1fr;">
+      <div>
+        <div class="field"><label>Salle *</label><select id="block-room"></select></div>
+        <div class="field"><label>Date *</label><input type="date" id="block-date" /></div>
+        <div class="field"><label>Créneau</label>
+          <select id="block-time">
+            <option value="">Toute la journée</option>
+          </select>
+        </div>
+        <div class="field"><label>Raison (optionnel)</label><input type="text" id="block-reason" placeholder="Maintenance, événement privé…" /></div>
+        <button class="btn btn-primary btn-full" onclick="addBlockedSlot()">🚫 Bloquer</button>
+        <p class="text-muted" style="font-size:11px;margin-top:10px;line-height:1.6;">Un créneau bloqué disparaît du site public et ne peut plus être réservé en ligne. Choisissez « Toute la journée » pour fermer la salle sur une date complète.</p>
+      </div>
+      <div>
+        <div id="blocked-list"><div class="empty">Chargement…</div></div>
+      </div>
     </div>
   </div>
 </div>
@@ -97,11 +122,18 @@ const LABELS = { pending:'En attente', deposit_received:'Acompte reçu', confirm
 const MODE_LABELS = { normale:'Normale', moyen:'Moyen', extreme:'Extreme' };
 let rows = [], rooms = {}, filter = 'pending', selectedId = null, depositTargetId = null;
 
+let allSlots = [];
 window.addEventListener('load', async () => {
   try { await requireAuth(); } catch(e) { return; }
-  const { data } = await sb.from('rooms').select('id,name,color,extreme_mode_price_xof');
+  const { data } = await sb.from('rooms').select('id,name,color,extreme_mode_price_xof,sort_order').order('sort_order');
   (data||[]).forEach(r => rooms[r.id] = r);
+  populateBlockRoomSelect(data||[]);
+  const { data: slots } = await sb.from('time_slots').select('room_id,start_time').eq('is_active', true).order('start_time');
+  allSlots = slots || [];
+  document.getElementById('block-date').value = new Date().toISOString().slice(0,10);
+  populateBlockTimeSelect();
   await loadRequests();
+  await loadBlockedSlots();
   // Temps réel : nouvelle demande depuis le site
   sb.channel('resreq').on('postgres_changes', { event:'*', schema:'public', table:'reservation_requests' }, payload => {
     if (payload.eventType === 'INSERT') { toast('Nouvelle demande : ' + payload.new.client_name, 'info'); if (window.uiPing) uiPing(); }
@@ -163,6 +195,7 @@ function showDetail(id) {
   let actions = '';
   if (r.status === 'pending') actions = `
       <button class="btn btn-primary btn-full mt-2" onclick="openDepositModal('${r.id}')">💰 Valider → saisir l'avance</button>
+      <button class="btn btn-ghost btn-full mt-1" onclick="confirmNoDeposit('${r.id}')">🤝 Client de confiance — paiement à l'arrivée</button>
       <button class="btn btn-ghost btn-full mt-1" onclick="setStatus('${r.id}','cancelled')">Annuler la demande</button>`;
   else if (r.status === 'deposit_received') actions = `
       <button class="btn btn-success btn-full mt-2" onclick="confirmArrival('${r.id}')">✓ Client arrivé / partie confirmée</button>
@@ -208,6 +241,24 @@ async function confirmArrival(id) {
   toast('Partie confirmée — ouverture de la caisse…', 'ok');
   await loadRequests();
   window.open('caisse.html?res=' + id, '_blank');
+}
+
+// ── Client de confiance : confirmation sans acompte (paiement à l'arrivée) ──
+async function confirmNoDeposit(id) {
+  const r = rows.find(x => x.id === id); if (!r) return;
+  const room = rooms[r.room_id] || {};
+  const ok = confirm(`Confirmer sans acompte pour ${r.team_name || r.client_name} ?\n${room.name || '?'} · ${fmtDate(r.session_date)} · ${r.time_slot}\n\nLe créneau sera bloqué immédiatement. Le client paiera l'intégralité à son arrivée, à la caisse.`);
+  if (!ok) return;
+  const { error } = await sb.rpc('staff_confirm_no_deposit', {
+    p_reservation_id: id,
+    p_operator: currentUser.display_name
+  });
+  if (error) {
+    toast(error.message.includes('vient d\'être réservé') ? error.message : 'Erreur : ' + error.message, 'err');
+    return;
+  }
+  toast('Réservation confirmée — créneau bloqué, paiement à l\'arrivée', 'ok');
+  await loadRequests();
 }
 
 // ── Validation + saisie de l'avance (RPC atomique côté serveur) ─
@@ -288,6 +339,58 @@ function printAdvanceVoucher(r, advance, payment) {
 }
 
 function escHtml(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+// ── Blocage de créneaux par salle ───────────────────────────────
+function populateBlockRoomSelect(roomList) {
+  const sel = document.getElementById('block-room');
+  sel.innerHTML = roomList.map(r => `<option value="${r.id}">${escHtml(r.name)}</option>`).join('');
+  sel.addEventListener('change', populateBlockTimeSelect);
+}
+
+function populateBlockTimeSelect() {
+  const roomId = document.getElementById('block-room').value;
+  const sel = document.getElementById('block-time');
+  const times = allSlots.filter(s => s.room_id === roomId).map(s => s.start_time);
+  sel.innerHTML = '<option value="">Toute la journée</option>' + times.map(t => `<option value="${t}">${t}</option>`).join('');
+}
+
+async function addBlockedSlot() {
+  const room_id = document.getElementById('block-room').value;
+  const session_date = document.getElementById('block-date').value;
+  const time_slot = document.getElementById('block-time').value || null;
+  const reason = document.getElementById('block-reason').value.trim() || null;
+  if (!room_id) return toast('Choisissez une salle', 'err');
+  if (!session_date) return toast('Choisissez une date', 'err');
+  const { error } = await sb.from('blocked_slots').insert([{ room_id, session_date, time_slot, reason, created_by: currentUser.display_name }]);
+  if (error) return toast('Erreur : ' + error.message, 'err');
+  toast(time_slot ? 'Créneau bloqué' : 'Journée bloquée', 'ok');
+  document.getElementById('block-reason').value = '';
+  await loadBlockedSlots();
+}
+
+async function loadBlockedSlots() {
+  const today = new Date().toISOString().slice(0,10);
+  const { data, error } = await sb.from('blocked_slots').select('*')
+    .gte('session_date', today).order('session_date').order('time_slot', { ascending:true, nullsFirst:true });
+  const el = document.getElementById('blocked-list');
+  if (error) { el.innerHTML = '<div class="empty">Erreur de chargement</div>'; return; }
+  if (!data || !data.length) { el.innerHTML = '<div class="empty">Aucun créneau bloqué à venir</div>'; return; }
+  el.innerHTML = data.map(b => {
+    const room = rooms[b.room_id] || {};
+    const when = b.time_slot ? `${fmtDate(b.session_date)} · ${b.time_slot}` : `${fmtDate(b.session_date)} · Journée entière`;
+    return `<div class="blk">
+      <div class="info"><b>${escHtml(room.name || '?')}</b><small>${when}${b.reason ? ' · ' + escHtml(b.reason) : ''}</small></div>
+      <button class="btn btn-ghost btn-sm" onclick="deleteBlockedSlot('${b.id}')">✕ Débloquer</button>
+    </div>`;
+  }).join('');
+}
+
+async function deleteBlockedSlot(id) {
+  const { error } = await sb.from('blocked_slots').delete().eq('id', id);
+  if (error) return toast('Erreur : ' + error.message, 'err');
+  toast('Créneau débloqué', 'ok');
+  await loadBlockedSlots();
+}
 </script>
 </body>
 </html>
