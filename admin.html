@@ -1061,6 +1061,29 @@ function couponUsesLabel(v) {
   return v.max_uses != null ? `${v.used_count} / ${v.max_uses}` : `${v.used_count} / ∞`;
 }
 
+// ── Variantes "sûres PDF" : les polices standard de jsPDF (WinAnsi) ne
+//    supportent ni l'espace insécable fine (utilisée par toLocaleString('fr-FR')),
+//    ni la flèche →, ni les points de suspension … → glyphes cassés à l'impression.
+function fmtPdf(n) {
+  return Number(n || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' ' + CURRENCY;
+}
+function couponValueLabelPdf(v) {
+  if (v.type === 'amount') {
+    return v.remaining_amount_xof === v.initial_amount_xof
+      ? fmtPdf(v.remaining_amount_xof)
+      : `${fmtPdf(v.remaining_amount_xof)} restant / ${fmtPdf(v.initial_amount_xof)} initial`;
+  }
+  if (v.type === 'fixed_discount') return '-' + fmtPdf(v.discount_value_xof);
+  if (v.type === 'percent')        return '-' + v.discount_percent + '%' + (v.max_discount_xof ? ` (max ${fmtPdf(v.max_discount_xof)})` : '');
+  return '-';
+}
+function couponValidityLabelPdf(v) {
+  if (!v.valid_from && !v.valid_until) return 'Sans limite';
+  const f = v.valid_from ? formatDate(v.valid_from) : '...';
+  const t = v.valid_until ? formatDate(v.valid_until) : '...';
+  return `${f} - ${t}`;
+}
+
 function renderVouchers() {
   const statusF = document.getElementById('v-filter-status')?.value || 'all';
   const typeF   = document.getElementById('v-filter-type')?.value   || 'all';
@@ -1093,6 +1116,7 @@ function renderVouchers() {
         <button class="btn btn-ghost btn-sm" onclick="openCouponModal('${v.id}')" title="QR / Imprimer / PDF">🖨</button>
         <button class="btn btn-ghost btn-sm" onclick="editCoupon('${v.id}')" title="Modifier">✏️</button>
         <button class="btn btn-ghost btn-sm" onclick="toggleVoucher('${v.id}',${v.is_active})">${v.is_active ? 'Désactiver' : 'Réactiver'}</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--red);" onclick="deleteCoupon('${v.id}')" title="Supprimer définitivement">🗑</button>
       </td>
     </tr>`;
   }).join('');
@@ -1211,6 +1235,23 @@ function resetCouponForm() {
 
 async function toggleVoucher(id, current) {
   await sb.from('vouchers').update({ is_active: !current }).eq('id', id);
+  loadVouchers();
+}
+
+async function deleteCoupon(id) {
+  const v = coupons.find(c => c.id === id);
+  if (!v) return;
+  if (!confirm(`Supprimer définitivement le coupon ${v.code} ?\nCette action est irréversible.`)) return;
+  const { error } = await sb.from('vouchers').delete().eq('id', id);
+  if (error) {
+    if (error.code === '23503') {
+      toast('Ce coupon est lié à une vente enregistrée — impossible de le supprimer. Désactivez-le plutôt.', 'err');
+    } else {
+      toast('Erreur : ' + error.message, 'err');
+    }
+    return;
+  }
+  toast('Coupon supprimé', 'ok');
   loadVouchers();
 }
 
@@ -1346,7 +1387,9 @@ async function _exportCouponsPDF(list) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const pageW = 210, pageH = 297, margin = 10;
-  const cols = 2, cardW = (pageW - margin * 2 - 6) / cols, cardH = 55, gap = 6;
+  const cols = 2, cardW = (pageW - margin * 2 - 6) / cols, cardH = 46, gap = 6;
+  const qrSize = 24;
+  const textW = cardW - 8 - qrSize - 4; // colonne de texte à gauche, jamais sous le QR
   let x = margin, y = margin, col = 0;
 
   for (let i = 0; i < list.length; i++) {
@@ -1359,24 +1402,25 @@ async function _exportCouponsPDF(list) {
     doc.setLineWidth(0.4);
     doc.roundedRect(x, y, cardW, cardH, 2, 2);
 
-    doc.setFontSize(8); doc.setTextColor(120);
+    doc.setFontSize(7); doc.setTextColor(130);
     doc.text('ENIGMA ESCAPE GAME', x + 4, y + 6);
 
-    doc.setFontSize(9); doc.setTextColor(30);
+    doc.setFontSize(8); doc.setTextColor(124, 106, 247);
     doc.text(couponTypeLabel(v).toUpperCase(), x + 4, y + 11);
 
     doc.setFontSize(13); doc.setTextColor(20);
-    doc.text(couponValueLabel(v), x + 4, y + 19);
+    const valueLines = doc.splitTextToSize(couponValueLabelPdf(v), textW);
+    doc.text(valueLines, x + 4, y + 19);
 
-    doc.setFontSize(14); doc.setTextColor(0);
-    doc.text(v.code, x + 4, y + 28);
-
-    doc.setFontSize(7.5); doc.setTextColor(100);
-    doc.text('Validité : ' + couponValidityLabel(v), x + 4, y + 34);
-    doc.text('Usages : ' + couponUsesLabel(v), x + 4, y + 39);
+    doc.setFontSize(12); doc.setTextColor(0);
+    const codeY = y + 19 + (valueLines.length - 1) * 5.5 + 8;
+    doc.text(v.code, x + 4, codeY);
 
     const qrUrl = await _qrDataUrlFor(v.code);
-    if (qrUrl) doc.addImage(qrUrl, 'PNG', x + cardW - 32, y + 6, 26, 26);
+    if (qrUrl) doc.addImage(qrUrl, 'PNG', x + cardW - qrSize - 4, y + 6, qrSize, qrSize);
+
+    doc.setFontSize(7); doc.setTextColor(110);
+    doc.text('Validité : ' + couponValidityLabelPdf(v), x + 4, y + cardH - 4);
 
     col++;
     if (col >= cols) { col = 0; x = margin; y += cardH + gap; }
