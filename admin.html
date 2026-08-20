@@ -128,6 +128,36 @@
     /* batch preview grid */
     .batch-grid { display:grid; grid-template-columns:1fr 1fr; gap:5px; font-family:monospace; font-size:12px; max-height:260px; overflow-y:auto; }
     .batch-code-chip { padding:4px 7px; background:var(--bg3); border-radius:4px; border:1px solid var(--border); white-space:nowrap; }
+
+    /* ── Coupons : sélecteur de type ─────────────────────────── */
+    .ctype-tabs { display:flex; gap:6px; margin-bottom:14px; }
+    .ctype-btn {
+      flex:1; padding:9px 6px; border-radius:7px; border:1px solid var(--border);
+      background:var(--bg3); color:var(--text2); font-size:12px; font-weight:600;
+      cursor:pointer; text-align:center; transition:.15s;
+    }
+    .ctype-btn.selected { background:rgba(124,106,247,.14); border-color:var(--purple); color:#fff; }
+    .ctype-fields { display:none; }
+    .ctype-fields.active { display:block; }
+
+    .badge-yellow { background:rgba(250,204,21,.14); color:#facc15; border:1px solid rgba(250,204,21,.3); }
+    .badge-gray   { background:rgba(148,163,184,.14); color:#94a3b8; border:1px solid rgba(148,163,184,.28); }
+    .c-type-tag {
+      display:inline-block; font-size:9px; font-weight:800; text-transform:uppercase;
+      letter-spacing:.06em; padding:2px 6px; border-radius:4px; margin-left:6px; vertical-align:middle;
+    }
+    .c-type-tag.amount   { background:rgba(250,204,21,.15); color:#facc15; }
+    .c-type-tag.fixed_discount { background:rgba(34,211,238,.15); color:#22d3ee; }
+    .c-type-tag.percent  { background:rgba(74,222,128,.15); color:#4ade80; }
+
+    .c-toolbar { display:flex; gap:8px; margin:0 0 12px; flex-wrap:wrap; align-items:flex-end; }
+    .c-toolbar .field { margin:0; min-width:140px; }
+    .c-actions-cell { display:flex; gap:4px; flex-wrap:wrap; }
+    .c-actions-cell .btn { padding:4px 7px; font-size:11px; }
+
+    /* ── Coupon print card (screen preview for QR modal) ─────── */
+    .qr-preview-wrap { text-align:center; padding:14px; background:#fff; border-radius:10px; margin:10px 0; }
+    #qr-canvas-holder { display:inline-block; }
   </style>
 </head>
 <body>
@@ -150,7 +180,7 @@
     <button class="tab-btn active" onclick="switchTab('rooms')">🏠 Salles</button>
     <button class="tab-btn"       onclick="switchTab('slots')">🕐 Créneaux</button>
     <button class="tab-btn"       onclick="switchTab('pricing')">💰 Tarifs</button>
-    <button class="tab-btn"       onclick="switchTab('vouchers')">🎁 Bons cadeaux</button>
+    <button class="tab-btn"       onclick="switchTab('vouchers')">🎟 Coupons</button>
     <button class="tab-btn"       onclick="switchTab('products')">🛒 Produits</button>
     <button class="tab-btn"       onclick="switchTab('users')">👥 Utilisateurs</button>
     <button class="tab-btn"       onclick="switchTab('caisse')">🏦 État de caisse</button>
@@ -256,27 +286,97 @@
     </div>
   </div>
 
-  <!-- ── Bons cadeaux ────────────────────────────────────────── -->
+  <!-- ── Coupons ─────────────────────────────────────────────── -->
   <div id="tab-vouchers" class="tab-panel">
     <div class="two-col">
       <div class="card">
-        <div class="card-title">Créer un bon cadeau</div>
+        <div class="card-title" id="coupon-form-title">Créer un coupon</div>
+        <input type="hidden" id="v-id" />
+
+        <div class="ctype-tabs">
+          <button type="button" class="ctype-btn selected" data-type="amount"          onclick="setCouponType('amount')">💰 Montant<br><span style="font-weight:400;font-size:10px;">Bon cadeau</span></button>
+          <button type="button" class="ctype-btn"          data-type="fixed_discount"  onclick="setCouponType('fixed_discount')">➖ Réduction fixe<br><span style="font-weight:400;font-size:10px;">FCFA</span></button>
+          <button type="button" class="ctype-btn"          data-type="percent"         onclick="setCouponType('percent')">％ Réduction %<br><span style="font-weight:400;font-size:10px;">Pourcentage</span></button>
+        </div>
+
         <div class="field"><label>Code *</label>
           <div style="display:flex;gap:6px;">
             <input type="text" id="v-code" placeholder="EG-XXXX" style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase();" />
             <button class="btn btn-ghost btn-sm" onclick="genCode()">↻</button>
           </div>
         </div>
-        <div class="field"><label>Montant initial (FCFA) *</label><input type="number" id="v-amount" min="1" /></div>
-        <div class="field"><label>Vendu par</label><input type="text" id="v-seller" placeholder="Nom" /></div>
+
+        <div id="cf-amount" class="ctype-fields active">
+          <div class="field"><label>Montant initial (FCFA) *</label><input type="number" id="v-amount" min="1" /></div>
+        </div>
+        <div id="cf-fixed_discount" class="ctype-fields">
+          <div class="field"><label>Montant de la réduction (FCFA) *</label><input type="number" id="v-discount-value" min="1" /></div>
+        </div>
+        <div id="cf-percent" class="ctype-fields">
+          <div class="field-row">
+            <div class="field"><label>Réduction (%) *</label><input type="number" id="v-discount-percent" min="1" max="100" step="0.5" /></div>
+            <div class="field"><label>Plafond (FCFA, optionnel)</label><input type="number" id="v-max-discount" min="0" placeholder="Illimité" /></div>
+          </div>
+        </div>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:6px 0;">
+        <div class="field-row">
+          <div class="field"><label>Valable à partir du</label><input type="date" id="v-valid-from" /></div>
+          <div class="field"><label>Valable jusqu'au</label><input type="date" id="v-valid-until" /></div>
+        </div>
+        <div class="field"><label>Nombre d'usages max <span style="font-weight:400;color:var(--text3);">(vide = illimité)</span></label>
+          <input type="number" id="v-max-uses" min="1" placeholder="Illimité" />
+        </div>
+
+        <div class="field"><label>Vendu par / créé par</label><input type="text" id="v-seller" placeholder="Nom" /></div>
         <div class="field"><label>Notes</label><input type="text" id="v-notes" /></div>
-        <button class="btn btn-primary btn-full" onclick="createVoucher()">Créer le bon cadeau</button>
+
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary btn-full" id="coupon-save-btn" onclick="createVoucher()">Créer le coupon</button>
+          <button class="btn btn-ghost" id="coupon-cancel-btn" onclick="cancelCouponEdit()" style="display:none;">Annuler</button>
+        </div>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:16px 0;">
+        <div class="card-title" style="font-size:13px;">Génération en lot</div>
+        <div class="field-row">
+          <div class="field"><label>Nombre de codes</label><input type="number" id="batch-count" min="2" max="200" value="10" /></div>
+          <div style="display:flex;align-items:flex-end;padding-bottom:14px;">
+            <button class="btn btn-ghost" onclick="generateBatch()">Générer le lot</button>
+          </div>
+        </div>
+        <div class="text-muted" style="font-size:11px;margin-top:-6px;">Utilise le type et les paramètres de validité définis ci-dessus.</div>
       </div>
+
       <div class="card">
-        <div class="card-title">Bons cadeaux actifs</div>
+        <div class="card-title">Coupons</div>
+        <div class="c-toolbar">
+          <div class="field">
+            <label>Statut</label>
+            <select id="v-filter-status" onchange="renderVouchers()">
+              <option value="all">Tous</option>
+              <option value="active">Actifs</option>
+              <option value="inactive">Inactifs</option>
+              <option value="expiring">Expire bientôt (7j)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Type</label>
+            <select id="v-filter-type" onchange="renderVouchers()">
+              <option value="all">Tous</option>
+              <option value="amount">Montant</option>
+              <option value="fixed_discount">Réduction fixe</option>
+              <option value="percent">Réduction %</option>
+            </select>
+          </div>
+          <div class="field" style="flex:1;">
+            <label>Recherche</label>
+            <input type="text" id="v-filter-search" placeholder="Code, vendeur…" oninput="renderVouchers()" />
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="exportBatchPDF()">📄 Export PDF (liste filtrée)</button>
+        </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Code</th><th>Initial</th><th>Solde</th><th>Vendeur</th><th>Statut</th><th></th></tr></thead>
+            <thead><tr><th>Code</th><th>Valeur</th><th>Validité</th><th>Usages</th><th>Statut</th><th></th></tr></thead>
             <tbody id="vouchers-body">
               <tr><td colspan="6" class="text-muted" style="text-align:center;padding:16px;">Chargement…</td></tr>
             </tbody>
@@ -285,6 +385,29 @@
       </div>
     </div>
   </div>
+
+  <!-- ── Coupon QR / print / PDF modal ──────────────────────────── -->
+  <div id="coupon-qr-overlay" class="vc-overlay hidden" onclick="if(event.target===this)closeCouponModal()">
+    <div class="vc-modal">
+      <div class="gift-card" id="coupon-card-preview">
+        <div class="gc-brand">Enigma Escape Game</div>
+        <div class="gc-type-badge" id="cq-type-badge">COUPON</div>
+        <div class="gc-value" id="cq-value">—</div>
+        <div class="gc-code-label">Code</div>
+        <div class="gc-code" id="cq-code">—</div>
+        <div class="qr-preview-wrap"><div id="qr-canvas-holder"></div></div>
+        <div class="gc-validity" id="cq-validity">—</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px;">
+        <button class="btn btn-primary" style="flex:1;" onclick="printCoupon()">🖨 Imprimer</button>
+        <button class="btn btn-ghost" style="flex:1;" onclick="exportSingleCouponPDF()">📄 Export PDF</button>
+        <button class="btn btn-ghost" onclick="closeCouponModal()">Fermer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Zone d'impression coupon (invisible à l'écran, voir shared/print.css) -->
+  <div id="print-voucher"><div class="voucher-ticket" id="voucher-ticket-content"></div></div>
 
   <!-- ── Utilisateurs ─────────────────────────────────────────── -->
   <div id="tab-users" class="tab-panel">
@@ -572,6 +695,8 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="shared/config.js"></script>
 <script src="shared/auth.js"></script>
 <script>
@@ -868,44 +993,204 @@ async function deletePrice(id) {
   loadPricing();
 }
 
-// ── Vouchers ──────────────────────────────────────────────────
+// ── Coupons ──────────────────────────────────────────────────
+let coupons = [];
+let couponType = 'amount';
+let editingCouponId = null;
+let couponModalData = null;
+
+function setCouponType(type) {
+  couponType = type;
+  document.querySelectorAll('.ctype-btn').forEach(b => b.classList.toggle('selected', b.dataset.type === type));
+  document.querySelectorAll('.ctype-fields').forEach(f => f.classList.remove('active'));
+  document.getElementById('cf-' + type).classList.add('active');
+  document.getElementById('coupon-save-btn').textContent = editingCouponId ? 'Mettre à jour' : (
+    type === 'amount' ? 'Créer le coupon' : 'Créer le coupon de réduction'
+  );
+}
+
 async function loadVouchers() {
-  const { data } = await sb.from('vouchers').select('*').order('created_at', { ascending: false });
+  const { data, error } = await sb.from('vouchers').select('*').order('created_at', { ascending: false });
+  if (error) { console.error(error); return; }
+  coupons = data || [];
+  renderVouchers();
+}
+
+// Statut calculé en local (indépendant du flag is_active potentiellement pas encore
+// rafraîchi par le trigger/cron) : sert à l'affichage instantané des badges.
+function couponStatus(v) {
+  const today = new Date().toISOString().slice(0, 10);
+  const expired   = v.valid_until && v.valid_until < today;
+  const exhausted = v.max_uses != null && v.used_count >= v.max_uses;
+  const depleted  = v.type === 'amount' && v.remaining_amount_xof != null && v.remaining_amount_xof <= 0;
+  const notYet    = v.valid_from && v.valid_from > today;
+  if (!v.is_active && (expired || exhausted || depleted)) {
+    if (expired)   return { label: 'Expiré',  cls: 'badge-red'  };
+    if (exhausted) return { label: 'Épuisé',  cls: 'badge-red'  };
+    if (depleted)  return { label: 'Épuisé',  cls: 'badge-red'  };
+  }
+  if (!v.is_active) return { label: 'Inactif', cls: 'badge-red' };
+  if (notYet)        return { label: 'À venir', cls: 'badge-yellow' };
+  if (v.valid_until) {
+    const days = Math.ceil((new Date(v.valid_until) - new Date(today)) / 86400000);
+    if (days <= 7) return { label: `Expire J-${days}`, cls: 'badge-yellow' };
+  }
+  return { label: 'Actif', cls: 'badge-green' };
+}
+
+function couponValueLabel(v) {
+  if (v.type === 'amount')          return fmt(v.remaining_amount_xof) + ' / ' + fmt(v.initial_amount_xof);
+  if (v.type === 'fixed_discount')  return '−' + fmt(v.discount_value_xof);
+  if (v.type === 'percent')         return '−' + v.discount_percent + '%' + (v.max_discount_xof ? ` (max ${fmt(v.max_discount_xof)})` : '');
+  return '—';
+}
+function couponTypeLabel(v) {
+  return v.type === 'amount' ? 'Montant' : v.type === 'fixed_discount' ? 'Réd. fixe' : 'Réd. %';
+}
+function couponValidityLabel(v) {
+  if (!v.valid_from && !v.valid_until) return 'Sans limite';
+  const f = v.valid_from ? formatDate(v.valid_from) : '…';
+  const t = v.valid_until ? formatDate(v.valid_until) : '…';
+  return `${f} → ${t}`;
+}
+function couponUsesLabel(v) {
+  return v.max_uses != null ? `${v.used_count} / ${v.max_uses}` : `${v.used_count} / ∞`;
+}
+
+function renderVouchers() {
+  const statusF = document.getElementById('v-filter-status')?.value || 'all';
+  const typeF   = document.getElementById('v-filter-type')?.value   || 'all';
+  const search  = (document.getElementById('v-filter-search')?.value || '').trim().toLowerCase();
+  const today   = new Date().toISOString().slice(0, 10);
+
+  let list = coupons.filter(v => {
+    if (typeF !== 'all' && v.type !== typeF) return false;
+    if (search && !(v.code.toLowerCase().includes(search) || (v.sold_by || '').toLowerCase().includes(search))) return false;
+    if (statusF === 'active')   return v.is_active;
+    if (statusF === 'inactive') return !v.is_active;
+    if (statusF === 'expiring') return v.is_active && v.valid_until && v.valid_until >= today && (new Date(v.valid_until) - new Date(today)) / 86400000 <= 7;
+    return true;
+  });
+
   const tbody = document.getElementById('vouchers-body');
-  if (!data || !data.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="text-muted" style="text-align:center;padding:16px;">Aucun bon cadeau</td></tr>';
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-muted" style="text-align:center;padding:16px;">Aucun coupon</td></tr>';
     return;
   }
-  tbody.innerHTML = data.map(v => `<tr>
-    <td style="font-weight:600;font-family:monospace;">${v.code}</td>
-    <td>${fmt(v.initial_amount_xof)}</td>
-    <td style="font-weight:600;color:${v.remaining_amount_xof > 0 ? 'var(--green)' : 'var(--text3)'};">${fmt(v.remaining_amount_xof)}</td>
-    <td>${escHtml(v.sold_by)}</td>
-    <td><span class="badge ${v.is_active ? 'badge-green' : 'badge-red'}">${v.is_active ? 'Actif' : 'Inactif'}</span></td>
-    <td>
-      <button class="btn btn-ghost btn-sm" onclick="toggleVoucher('${v.id}',${v.is_active})">${v.is_active ? 'Désactiver' : 'Réactiver'}</button>
-    </td>
-  </tr>`).join('');
+  tbody.innerHTML = list.map(v => {
+    const st = couponStatus(v);
+    return `<tr>
+      <td style="font-weight:600;font-family:monospace;">${escHtml(v.code)}<span class="c-type-tag ${v.type}">${couponTypeLabel(v)}</span></td>
+      <td>${couponValueLabel(v)}</td>
+      <td style="font-size:12px;">${couponValidityLabel(v)}</td>
+      <td style="font-size:12px;">${couponUsesLabel(v)}</td>
+      <td><span class="badge ${st.cls}">${st.label}</span></td>
+      <td class="c-actions-cell">
+        <button class="btn btn-ghost btn-sm" onclick="openCouponModal('${v.id}')" title="QR / Imprimer / PDF">🖨</button>
+        <button class="btn btn-ghost btn-sm" onclick="editCoupon('${v.id}')" title="Modifier">✏️</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleVoucher('${v.id}',${v.is_active})">${v.is_active ? 'Désactiver' : 'Réactiver'}</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function collectCouponPayload() {
+  const code   = document.getElementById('v-code').value.trim().toUpperCase();
+  const seller = document.getElementById('v-seller').value.trim();
+  const notes  = document.getElementById('v-notes').value.trim();
+  const validFrom  = document.getElementById('v-valid-from').value || null;
+  const validUntil = document.getElementById('v-valid-until').value || null;
+  const maxUsesRaw = document.getElementById('v-max-uses').value;
+  const maxUses    = maxUsesRaw ? parseInt(maxUsesRaw) : null;
+
+  const payload = {
+    code, type: couponType, sold_by: seller, notes,
+    valid_from: validFrom, valid_until: validUntil, max_uses: maxUses,
+    initial_amount_xof: null, remaining_amount_xof: null,
+    discount_value_xof: null, discount_percent: null, max_discount_xof: null,
+  };
+  if (couponType === 'amount') {
+    const amount = parseInt(document.getElementById('v-amount').value) || 0;
+    if (!amount) { toast('Montant requis', 'err'); return null; }
+    payload.initial_amount_xof = amount;
+    payload.remaining_amount_xof = editingCouponId
+      ? undefined // ne pas écraser le solde restant en édition
+      : amount;
+  } else if (couponType === 'fixed_discount') {
+    const val = parseInt(document.getElementById('v-discount-value').value) || 0;
+    if (!val) { toast('Montant de la réduction requis', 'err'); return null; }
+    payload.discount_value_xof = val;
+  } else if (couponType === 'percent') {
+    const pct = parseFloat(document.getElementById('v-discount-percent').value) || 0;
+    if (!pct || pct > 100) { toast('Pourcentage requis (1-100)', 'err'); return null; }
+    payload.discount_percent = pct;
+    const maxD = document.getElementById('v-max-discount').value;
+    payload.max_discount_xof = maxD ? parseInt(maxD) : null;
+  }
+  if (!code) { toast('Code requis', 'err'); return null; }
+  Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
+  return payload;
 }
 
 async function createVoucher() {
-  const code   = document.getElementById('v-code').value.trim();
-  const amount = parseInt(document.getElementById('v-amount').value) || 0;
-  const seller = document.getElementById('v-seller').value.trim();
-  const notes  = document.getElementById('v-notes').value.trim();
-  if (!code)   return toast('Code requis', 'err');
-  if (!amount) return toast('Montant requis', 'err');
-  const { error } = await sb.from('vouchers').insert([{
-    code, initial_amount_xof: amount, remaining_amount_xof: amount,
-    sold_by: seller, notes,
-  }]);
-  if (error) return toast(error.code === '23505' ? 'Code déjà utilisé' : 'Erreur', 'err');
-  toast('Bon cadeau créé', 'ok');
-  document.getElementById('v-code').value   = '';
-  document.getElementById('v-amount').value = '';
-  document.getElementById('v-seller').value = '';
-  document.getElementById('v-notes').value  = '';
+  const payload = collectCouponPayload();
+  if (!payload) return;
+
+  if (editingCouponId) {
+    const { error } = await sb.from('vouchers').update(payload).eq('id', editingCouponId);
+    if (error) return toast(error.code === '23505' ? 'Code déjà utilisé' : 'Erreur : ' + error.message, 'err');
+    toast('Coupon mis à jour', 'ok');
+  } else {
+    const { error } = await sb.from('vouchers').insert([payload]);
+    if (error) return toast(error.code === '23505' ? 'Code déjà utilisé' : 'Erreur : ' + error.message, 'err');
+    toast('Coupon créé', 'ok');
+  }
+  resetCouponForm();
   loadVouchers();
+}
+
+function editCoupon(id) {
+  const v = coupons.find(c => c.id === id);
+  if (!v) return;
+  editingCouponId = id;
+  setCouponType(v.type);
+  document.getElementById('v-id').value = v.id;
+  document.getElementById('v-code').value = v.code;
+  document.getElementById('v-code').setAttribute('readonly', ''); // le code ne se change pas en édition
+  document.getElementById('v-amount').value = v.initial_amount_xof || '';
+  document.getElementById('v-discount-value').value = v.discount_value_xof || '';
+  document.getElementById('v-discount-percent').value = v.discount_percent || '';
+  document.getElementById('v-max-discount').value = v.max_discount_xof || '';
+  document.getElementById('v-valid-from').value = v.valid_from || '';
+  document.getElementById('v-valid-until').value = v.valid_until || '';
+  document.getElementById('v-max-uses').value = v.max_uses ?? '';
+  document.getElementById('v-seller').value = v.sold_by || '';
+  document.getElementById('v-notes').value = v.notes || '';
+  document.getElementById('coupon-form-title').textContent = 'Modifier le coupon';
+  document.getElementById('coupon-save-btn').textContent = 'Mettre à jour';
+  document.getElementById('coupon-cancel-btn').style.display = '';
+  document.getElementById('coupon-form-title').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function cancelCouponEdit() { resetCouponForm(); }
+
+function resetCouponForm() {
+  editingCouponId = null;
+  document.getElementById('v-id').value = '';
+  document.getElementById('v-code').value = '';
+  document.getElementById('v-code').removeAttribute('readonly');
+  document.getElementById('v-amount').value = '';
+  document.getElementById('v-discount-value').value = '';
+  document.getElementById('v-discount-percent').value = '';
+  document.getElementById('v-max-discount').value = '';
+  document.getElementById('v-valid-from').value = '';
+  document.getElementById('v-valid-until').value = '';
+  document.getElementById('v-max-uses').value = '';
+  document.getElementById('v-seller').value = '';
+  document.getElementById('v-notes').value = '';
+  document.getElementById('coupon-form-title').textContent = 'Créer un coupon';
+  document.getElementById('coupon-cancel-btn').style.display = 'none';
+  setCouponType('amount');
 }
 
 async function toggleVoucher(id, current) {
@@ -917,6 +1202,171 @@ function genCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const rand = (n) => Array.from({length:n}, () => chars[Math.floor(Math.random()*chars.length)]).join('');
   document.getElementById('v-code').value = `EG-${rand(4)}-${rand(4)}`;
+}
+
+async function generateBatch() {
+  const count = parseInt(document.getElementById('batch-count').value) || 0;
+  if (count < 2 || count > 200) return toast('Choisir entre 2 et 200 codes', 'err');
+  const base = collectCouponPayload();
+  if (!base) return;
+  if (editingCouponId) return toast('Terminez ou annulez la modification en cours avant un lot', 'err');
+
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const rand = (n) => Array.from({length:n}, () => chars[Math.floor(Math.random()*chars.length)]).join('');
+  const seen = new Set(coupons.map(c => c.code));
+  const rows = [];
+  while (rows.length < count) {
+    const code = `EG-${rand(4)}-${rand(4)}`;
+    if (seen.has(code)) continue;
+    seen.add(code);
+    rows.push({ ...base, code });
+  }
+  const { error } = await sb.from('vouchers').insert(rows);
+  if (error) return toast('Erreur : ' + error.message, 'err');
+  toast(`${count} coupons créés`, 'ok');
+  resetCouponForm();
+  loadVouchers();
+}
+
+// ── QR / Impression / PDF ────────────────────────────────────
+function openCouponModal(id) {
+  const v = coupons.find(c => c.id === id);
+  if (!v) return;
+  couponModalData = v;
+  document.getElementById('cq-type-badge').textContent = couponTypeLabel(v).toUpperCase();
+  document.getElementById('cq-value').textContent = couponValueLabel(v);
+  document.getElementById('cq-code').textContent = v.code;
+  document.getElementById('cq-validity').textContent =
+    couponValidityLabel(v) + (v.max_uses != null ? ` · ${couponUsesLabel(v)} usages` : '');
+
+  const holder = document.getElementById('qr-canvas-holder');
+  holder.innerHTML = '';
+  new QRCode(holder, { text: v.code, width: 160, height: 160, correctLevel: QRCode.CorrectLevel.M });
+
+  document.getElementById('coupon-qr-overlay').classList.remove('hidden');
+}
+function closeCouponModal() {
+  document.getElementById('coupon-qr-overlay').classList.add('hidden');
+}
+
+function buildVoucherTicketHTML(v) {
+  const now = new Date().toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  const typeLine = v.type === 'amount'
+    ? `<div class="ticket-row"><span class="label">Montant</span><span class="value">${fmt(v.remaining_amount_xof)}</span></div>`
+    : v.type === 'fixed_discount'
+    ? `<div class="ticket-row"><span class="label">Réduction</span><span class="value">−${fmt(v.discount_value_xof)}</span></div>`
+    : `<div class="ticket-row"><span class="label">Réduction</span><span class="value">−${v.discount_percent}%</span></div>`;
+  const validLine = (v.valid_from || v.valid_until)
+    ? `<div class="ticket-row"><span class="label">Validité</span><span class="value">${couponValidityLabel(v)}</span></div>` : '';
+  const usesLine = v.max_uses != null
+    ? `<div class="ticket-row"><span class="label">Usages max</span><span class="value">${v.max_uses}</span></div>` : '';
+
+  const holder = document.getElementById('voucher-ticket-content');
+  holder.innerHTML = `
+    <div class="ticket-header">
+      <div class="biz-name">${escHtml(ENIGMA_CONFIG.businessName)}</div>
+      <div class="ticket-subtitle">- Coupon -</div>
+    </div>
+    <div class="ticket-number-label">Code</div>
+    <div class="ticket-number">${escHtml(v.code)}</div>
+    <hr class="ticket-sep">
+    ${typeLine}
+    ${validLine}
+    ${usesLine}
+    <div id="voucher-qr-print" style="text-align:center;margin:4mm 0;"></div>
+    <div class="ticket-footer">
+      <div class="thanks">Merci !</div>
+      <div class="ticket-meta">Émis le ${now}</div>
+    </div>`;
+  const qrHolder = document.getElementById('voucher-qr-print');
+  new QRCode(qrHolder, { text: v.code, width: 130, height: 130, correctLevel: QRCode.CorrectLevel.M });
+}
+
+function printCoupon() {
+  if (!couponModalData) return;
+  buildVoucherTicketHTML(couponModalData);
+  document.body.classList.add('print-voucher');
+  setTimeout(() => { window.print(); document.body.classList.remove('print-voucher'); }, 80);
+}
+
+function _qrDataUrlFor(code) {
+  return new Promise(resolve => {
+    const tmp = document.createElement('div');
+    tmp.style.position = 'fixed'; tmp.style.left = '-9999px';
+    document.body.appendChild(tmp);
+    new QRCode(tmp, { text: code, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M });
+    setTimeout(() => {
+      const img = tmp.querySelector('img'), canvas = tmp.querySelector('canvas');
+      const url = canvas ? canvas.toDataURL('image/png') : (img ? img.src : null);
+      document.body.removeChild(tmp);
+      resolve(url);
+    }, 60);
+  });
+}
+
+async function exportSingleCouponPDF() {
+  if (!couponModalData) return;
+  await _exportCouponsPDF([couponModalData]);
+}
+
+async function exportBatchPDF() {
+  const statusF = document.getElementById('v-filter-status')?.value || 'all';
+  const typeF   = document.getElementById('v-filter-type')?.value   || 'all';
+  const search  = (document.getElementById('v-filter-search')?.value || '').trim().toLowerCase();
+  const today   = new Date().toISOString().slice(0, 10);
+  const list = coupons.filter(v => {
+    if (typeF !== 'all' && v.type !== typeF) return false;
+    if (search && !(v.code.toLowerCase().includes(search) || (v.sold_by || '').toLowerCase().includes(search))) return false;
+    if (statusF === 'active')   return v.is_active;
+    if (statusF === 'inactive') return !v.is_active;
+    if (statusF === 'expiring') return v.is_active && v.valid_until && v.valid_until >= today && (new Date(v.valid_until) - new Date(today)) / 86400000 <= 7;
+    return true;
+  });
+  if (!list.length) return toast('Aucun coupon à exporter', 'err');
+  await _exportCouponsPDF(list);
+}
+
+async function _exportCouponsPDF(list) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const pageW = 210, pageH = 297, margin = 10;
+  const cols = 2, cardW = (pageW - margin * 2 - 6) / cols, cardH = 55, gap = 6;
+  let x = margin, y = margin, col = 0;
+
+  for (let i = 0; i < list.length; i++) {
+    const v = list[i];
+    if (y + cardH > pageH - margin) {
+      doc.addPage(); x = margin; y = margin; col = 0;
+    }
+    // Carte
+    doc.setDrawColor(124, 106, 247);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(x, y, cardW, cardH, 2, 2);
+
+    doc.setFontSize(8); doc.setTextColor(120);
+    doc.text('ENIGMA ESCAPE GAME', x + 4, y + 6);
+
+    doc.setFontSize(9); doc.setTextColor(30);
+    doc.text(couponTypeLabel(v).toUpperCase(), x + 4, y + 11);
+
+    doc.setFontSize(13); doc.setTextColor(20);
+    doc.text(couponValueLabel(v), x + 4, y + 19);
+
+    doc.setFontSize(14); doc.setTextColor(0);
+    doc.text(v.code, x + 4, y + 28);
+
+    doc.setFontSize(7.5); doc.setTextColor(100);
+    doc.text('Validité : ' + couponValidityLabel(v), x + 4, y + 34);
+    doc.text('Usages : ' + couponUsesLabel(v), x + 4, y + 39);
+
+    const qrUrl = await _qrDataUrlFor(v.code);
+    if (qrUrl) doc.addImage(qrUrl, 'PNG', x + cardW - 32, y + 6, 26, 26);
+
+    col++;
+    if (col >= cols) { col = 0; x = margin; y += cardH + gap; }
+    else { x += cardW + gap; }
+  }
+  doc.save(`coupons-enigma-${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
 // ── Products ──────────────────────────────────────────────────

@@ -83,6 +83,16 @@
 <!-- ── Zone impression rapport journalier ──────────────────── -->
 <div id="print-report"><div class="report" id="report-content"></div></div>
 
+<!-- ── Scanner QR coupon ───────────────────────────────────────── -->
+<div id="qr-scan-overlay" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:400;display:flex;align-items:center;justify-content:center;">
+  <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:18px;max-width:360px;width:92vw;text-align:center;">
+    <div style="font-weight:700;margin-bottom:10px;">📷 Scanner le QR du coupon</div>
+    <video id="qr-video" style="width:100%;border-radius:8px;background:#000;" playsinline muted></video>
+    <div id="qr-scan-status" style="font-size:12px;color:var(--text3);margin-top:8px;">Positionnez le QR code face à la caméra…</div>
+    <button class="btn btn-ghost btn-full" style="margin-top:10px;" onclick="closeQrScanner()">Annuler</button>
+  </div>
+</div>
+
 <div class="page">
   <div class="flex-between" style="margin-bottom:12px;">
     <div class="page-title" style="margin:0;">🎫 Caisse — Billetterie</div>
@@ -199,11 +209,13 @@
             <input type="number" id="inp-discount" min="0" value="0" oninput="updateTotal()" />
           </div>
           <div class="field">
-            <label>Code bon cadeau</label>
+            <label>Code coupon</label>
             <div class="voucher-row">
               <input type="text" id="inp-voucher" placeholder="EG-XXXX"
-                     style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase();" />
-              <button class="btn btn-ghost btn-sm" onclick="validateVoucher()">✓</button>
+                     style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase();"
+                     onkeydown="if(event.key==='Enter'){event.preventDefault();validateVoucher();}" />
+              <button class="btn btn-ghost btn-sm" onclick="validateVoucher()" title="Valider le code">✓</button>
+              <button class="btn btn-ghost btn-sm" onclick="openQrScanner()" title="Scanner le QR code">📷</button>
             </div>
           </div>
         </div>
@@ -230,6 +242,7 @@
           <div class="total-line" id="t-extreme-row"  style="display:none;"><span>⚡ Mode Extrême</span><span id="t-extreme">0 FCFA</span></div>
           <div class="total-line" id="t-items-row"    style="display:none;"><span>Articles</span><span id="t-items">0 FCFA</span></div>
           <div class="total-line" id="t-discount-row" style="display:none;"><span>Remise</span><span id="t-discount" style="color:var(--green);">−0 FCFA</span></div>
+          <div class="total-line" id="t-coupon-discount-row" style="display:none;"><span id="t-coupon-discount-label">Coupon</span><span id="t-coupon-discount" style="color:var(--green);">−0 FCFA</span></div>
           <div class="total-line" id="t-voucher-row"  style="display:none;"><span>Bon cadeau</span><span id="t-voucher" style="color:var(--green);">−0 FCFA</span></div>
           <div class="total-line" id="t-advance-row"  style="display:none;"><span>✓ Avance client</span><span id="t-advance" style="color:var(--green);">−0 FCFA</span></div>
           <div class="total-line grand"><span>TOTAL</span><span id="t-total">0 FCFA</span></div>
@@ -293,6 +306,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
 <script src="shared/config.js"></script>
 <script src="shared/auth.js"></script>
 <script>
@@ -491,8 +505,20 @@ function updateTotal(baseOvr, extraOvr) {
   const extremeAmt = gameMode === 'extreme' ? (activeRoom?.extreme_mode_price_xof || 10000) : 0;
   const itemsAmt   = cart.reduce((s,i)=>s+i.total_xof,0);
   const discount   = parseInt(document.getElementById('inp-discount').value)||0;
-  const voucherP   = voucherData ? (parseInt(document.getElementById('pay-voucher').value)||0) : 0;
-  const subtotal   = Math.max(0, base+extra+extremeAmt+itemsAmt-discount);
+  const voucherP   = (voucherData && voucherData.type === 'amount') ? (parseInt(document.getElementById('pay-voucher').value)||0) : 0;
+
+  // Réduction issue d'un coupon (fixed_discount / percent), calculée sur le montant avant remise/coupon
+  const preDiscountBase = base+extra+extremeAmt+itemsAmt;
+  let couponDiscount = 0;
+  if (voucherData && voucherData.type === 'fixed_discount') {
+    couponDiscount = Math.min(voucherData.discount_value_xof, preDiscountBase);
+  } else if (voucherData && voucherData.type === 'percent') {
+    couponDiscount = Math.round(preDiscountBase * (voucherData.discount_percent/100));
+    if (voucherData.max_discount_xof) couponDiscount = Math.min(couponDiscount, voucherData.max_discount_xof);
+    couponDiscount = Math.min(couponDiscount, preDiscountBase);
+  }
+
+  const subtotal   = Math.max(0, preDiscountBase - discount - couponDiscount);
   const advanceP   = advanceSelected ? Math.min(advanceSelected.amount_xof, subtotal) : 0;
   const total      = subtotal;
   const cashPay    = parseInt(document.getElementById('pay-cash').value)||0;
@@ -506,6 +532,7 @@ function updateTotal(baseOvr, extraOvr) {
   setText('t-extreme',  fmt(extremeAmt));
   setText('t-items',    fmt(itemsAmt));
   setText('t-discount', `−${fmt(discount)}`);
+  setText('t-coupon-discount', `−${fmt(couponDiscount)}`);
   setText('t-voucher',  `−${fmt(voucherP)}`);
   setText('t-advance',  `−${fmt(advanceP)}`);
   setText('t-total',    fmt(total));
@@ -514,9 +541,10 @@ function updateTotal(baseOvr, extraOvr) {
   setVisible('t-extreme-row',  extremeAmt>0);
   setVisible('t-items-row',    itemsAmt>0);
   setVisible('t-discount-row', discount>0);
+  setVisible('t-coupon-discount-row', couponDiscount>0);
   setVisible('t-voucher-row',  voucherP>0);
   setVisible('t-advance-row',  advanceP>0);
-  window._sale = { base, extra, extremeAmt, itemsAmt, discount, voucherP, advanceP, total };
+  window._sale = { base, extra, extremeAmt, itemsAmt, discount, couponDiscount, voucherP, advanceP, total };
 }
 function _deriveBase() {
   if (!activeRoom) return 0;
@@ -537,21 +565,85 @@ function _deriveExtra() {
   return (n-maxKnown)*extraPP;
 }
 
-// ── Voucher ───────────────────────────────────────────────────
+// ── Coupon (bon cadeau / réduction fixe / réduction %) ─────────
 async function validateVoucher() {
   const code=document.getElementById('inp-voucher').value.trim();
   if (!code) return;
   const {data,error}=await sb.from('vouchers').select('*').eq('code',code).eq('is_active',true).single();
-  if (error||!data) return toast('Bon cadeau introuvable ou inactif','err');
-  if (data.remaining_amount_xof<=0) return toast('Bon cadeau épuisé','err');
+  if (error||!data) return toast('Coupon introuvable ou inactif','err');
+
+  const todayD = today();
+  if (data.valid_from && data.valid_from > todayD)   return toast(`Coupon valable à partir du ${formatDate(data.valid_from)}`,'err');
+  if (data.valid_until && data.valid_until < todayD) return toast('Coupon expiré','err');
+  if (data.max_uses != null && data.used_count >= data.max_uses) return toast('Coupon déjà utilisé le nombre de fois autorisé','err');
+  if (data.type === 'amount' && data.remaining_amount_xof<=0) return toast('Bon cadeau épuisé','err');
+
   voucherData=data;
-  const total=window._sale?.total||0;
-  const used=Math.min(data.remaining_amount_xof,total);
-  const pv=document.getElementById('pay-voucher');
-  pv.removeAttribute('readonly'); pv.value=used; pv.max=data.remaining_amount_xof; pv.setAttribute('readonly','');
-  document.getElementById('voucher-info').textContent=`✓ Solde : ${fmt(data.remaining_amount_xof)} — appliqué : ${fmt(used)}`;
+
+  if (data.type === 'amount') {
+    document.getElementById('t-coupon-discount-row').style.display='none';
+    const total=window._sale?.total||0;
+    const used=Math.min(data.remaining_amount_xof,total);
+    const pv=document.getElementById('pay-voucher');
+    pv.removeAttribute('readonly'); pv.value=used; pv.max=data.remaining_amount_xof; pv.setAttribute('readonly','');
+    document.getElementById('voucher-info').textContent=`✓ Solde : ${fmt(data.remaining_amount_xof)} — appliqué : ${fmt(used)}`;
+  } else {
+    document.getElementById('pay-voucher').value='0';
+    document.getElementById('t-coupon-discount-label').textContent =
+      data.type==='fixed_discount' ? `Coupon (−${fmt(data.discount_value_xof)})` : `Coupon (−${data.discount_percent}%)`;
+    const usesLeft = data.max_uses != null ? ` — usages restants : ${data.max_uses-data.used_count}` : '';
+    document.getElementById('voucher-info').textContent = `✓ Réduction appliquée${usesLeft}`;
+  }
   document.getElementById('voucher-info').classList.remove('hidden');
-  updateTotal(); toast('Bon cadeau appliqué','ok');
+  updateTotal(); toast('Coupon appliqué','ok');
+}
+
+
+// ── Scanner QR (caméra) ──────────────────────────────────────
+let qrStream = null, qrRAF = null;
+
+async function openQrScanner() {
+  const overlay = document.getElementById('qr-scan-overlay');
+  const video = document.getElementById('qr-video');
+  const status = document.getElementById('qr-scan-status');
+  overlay.classList.remove('hidden');
+  status.textContent = 'Positionnez le QR code face à la caméra…';
+  try {
+    qrStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+  } catch (e) {
+    try { qrStream = await navigator.mediaDevices.getUserMedia({ video: true }); }
+    catch (e2) { status.textContent = 'Caméra inaccessible : ' + (e2.message||e2); return; }
+  }
+  video.srcObject = qrStream;
+  await video.play();
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const scan = () => {
+    if (!qrStream) return;
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const result = jsQR(img.data, img.width, img.height);
+      if (result && result.data) {
+        status.textContent = 'Code détecté : ' + result.data;
+        document.getElementById('inp-voucher').value = result.data.trim().toUpperCase();
+        closeQrScanner();
+        validateVoucher();
+        return;
+      }
+    }
+    qrRAF = requestAnimationFrame(scan);
+  };
+  qrRAF = requestAnimationFrame(scan);
+}
+
+function closeQrScanner() {
+  document.getElementById('qr-scan-overlay').classList.add('hidden');
+  if (qrRAF) cancelAnimationFrame(qrRAF);
+  if (qrStream) { qrStream.getTracks().forEach(t => t.stop()); qrStream = null; }
+  const video = document.getElementById('qr-video');
+  if (video) video.srcObject = null;
 }
 
 // ── Avances ───────────────────────────────────────────────────
@@ -764,7 +856,7 @@ async function saveSale(doPrint) {
       extreme_mode_xof:    s.extremeAmt,
       game_mode:           activeRoom ? gameMode : null,
       team_name:           teamName || null,
-      discount_xof:        s.discount,
+      discount_xof:        s.discount + (s.couponDiscount||0),
       total_price_xof:     s.total,
       payment_especes_xof: cashPay,
       payment_mobile_xof:  mobilePay,
@@ -777,7 +869,7 @@ async function saveSale(doPrint) {
       ticket_type:         ticketType,
       client_name:         clientName || null,
       operator_name:       op,
-      notes:               document.getElementById('inp-notes').value.trim(),
+      notes:               [document.getElementById('inp-notes').value.trim(), voucherData && voucherData.type!=='amount' ? `Coupon ${voucherData.code} (−${fmt(s.couponDiscount||0)})` : ''].filter(Boolean).join(' · '),
       status:              'confirmed',
     };
 
@@ -803,10 +895,18 @@ async function saveSale(doPrint) {
     if (virementPay>0) bankInserts.push({date:sessionDate,type:'credit',amount_xof:virementPay,category:'virement',description:`${typeLabel} ${ticketNum}`,reference:payRef||null,ticket_id:ticket.id,created_by:op});
     if (bankInserts.length) await sb.from('bank_transactions').insert(bankInserts);
 
-    // Déduire le bon cadeau
-    if (voucherData && voucherPay>0) {
-      const nb = voucherData.remaining_amount_xof-voucherPay;
-      await sb.from('vouchers').update({remaining_amount_xof:Math.max(0,nb),is_active:nb>0}).eq('id',voucherData.id);
+    // Consommer le coupon (bon cadeau : déduit le solde ; réduction : incrémente juste l'usage)
+    if (voucherData && (voucherPay>0 || (s.couponDiscount||0)>0)) {
+      const appliedAmt = voucherData.type==='amount' ? voucherPay : (s.couponDiscount||0);
+      const updatePayload = { used_count: (voucherData.used_count||0) + 1 };
+      if (voucherData.type === 'amount') {
+        updatePayload.remaining_amount_xof = Math.max(0, voucherData.remaining_amount_xof - voucherPay);
+      }
+      await sb.from('vouchers').update(updatePayload).eq('id', voucherData.id);
+      await sb.from('voucher_redemptions').insert([{
+        voucher_id: voucherData.id, ticket_id: ticket.id,
+        amount_applied_xof: appliedAmt, operator_name: op,
+      }]);
     }
 
     // Marquer l'avance comme utilisée
@@ -1045,6 +1145,7 @@ function resetForm() {
   document.getElementById('inp-forfait-price').value='';
   document.getElementById('price-info').classList.add('hidden');
   document.getElementById('voucher-info').classList.add('hidden');
+  document.getElementById('t-coupon-discount-row').style.display='none';
   document.getElementById('advance-pay-info').classList.add('hidden');
   document.getElementById('game-mode-row').classList.add('hidden');
   document.getElementById('sel-gamemode').value='normale';

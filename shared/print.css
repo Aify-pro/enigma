@@ -1,6 +1,7 @@
 /* Cacher les zones d'impression en mode écran */
 #print-ticket,
-#print-report {
+#print-report,
+#print-voucher {
   display: none;
 }
 
@@ -31,7 +32,8 @@
 
   body > *                   { display: none !important; }
   body.print-ticket #print-ticket,
-  body.print-report #print-report { display: block !important; }
+  body.print-report #print-report,
+  body.print-voucher #print-voucher { display: block !important; }
 
   /* ════════════════════════════════════════
      TICKET INDIVIDUEL
@@ -183,6 +185,21 @@
     color: #555;
     margin-top: 2mm;
     line-height: 1.6;
+  }
+
+  /* ════════════════════════════════════════
+     COUPON
+  ════════════════════════════════════════ */
+  #print-voucher { display: none; }
+
+  .voucher-ticket {
+    width: 74mm;
+    margin: 3mm auto;
+    padding: 0;
+  }
+  .voucher-ticket #voucher-qr-print canvas,
+  .voucher-ticket #voucher-qr-print img {
+    margin: 0 auto;
   }
 
   /* ════════════════════════════════════════
