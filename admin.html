@@ -1039,7 +1039,11 @@ function couponStatus(v) {
 }
 
 function couponValueLabel(v) {
-  if (v.type === 'amount')          return fmt(v.remaining_amount_xof) + ' / ' + fmt(v.initial_amount_xof);
+  if (v.type === 'amount') {
+    return v.remaining_amount_xof === v.initial_amount_xof
+      ? fmt(v.remaining_amount_xof)
+      : `${fmt(v.remaining_amount_xof)} restant / ${fmt(v.initial_amount_xof)} initial`;
+  }
   if (v.type === 'fixed_discount')  return '−' + fmt(v.discount_value_xof);
   if (v.type === 'percent')         return '−' + v.discount_percent + '%' + (v.max_discount_xof ? ` (max ${fmt(v.max_discount_xof)})` : '');
   return '—';
@@ -1113,9 +1117,21 @@ function collectCouponPayload() {
     const amount = parseInt(document.getElementById('v-amount').value) || 0;
     if (!amount) { toast('Montant requis', 'err'); return null; }
     payload.initial_amount_xof = amount;
-    payload.remaining_amount_xof = editingCouponId
-      ? undefined // ne pas écraser le solde restant en édition
-      : amount;
+    if (editingCouponId) {
+      const orig = coupons.find(c => c.id === editingCouponId);
+      if (orig && orig.type === 'amount') {
+        // Ajuste le solde du même delta que le montant initial, sans jamais dépasser
+        // le nouveau montant initial ni descendre sous 0 (préserve ce qui a déjà été utilisé).
+        const delta = amount - (orig.initial_amount_xof || 0);
+        const adjusted = (orig.remaining_amount_xof || 0) + delta;
+        payload.remaining_amount_xof = Math.max(0, Math.min(amount, adjusted));
+      } else {
+        // Le coupon change de type vers "montant" : solde neuf.
+        payload.remaining_amount_xof = amount;
+      }
+    } else {
+      payload.remaining_amount_xof = amount;
+    }
   } else if (couponType === 'fixed_discount') {
     const val = parseInt(document.getElementById('v-discount-value').value) || 0;
     if (!val) { toast('Montant de la réduction requis', 'err'); return null; }
