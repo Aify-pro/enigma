@@ -917,7 +917,7 @@ async function saveSale(doPrint) {
     }
 
     toast(`✓ Ticket ${ticketNum} enregistré`,'ok');
-    if (doPrint) { buildTicketHTML(ticket,[...cart]); document.body.classList.add('print-ticket'); window.print(); document.body.classList.remove('print-ticket'); }
+    if (doPrint) { buildTicketHTML(ticket,[...cart]); printSection('print-ticket'); }
     resetForm();
     loadDaySummary();
     loadAdvances();
@@ -955,6 +955,26 @@ function validate() {
     +(s.advanceP||0);
   if (paid < s.total) return toast(`Paiement insuffisant : ${fmt(s.total-paid)} manquant`,'err'),false;
   return true;
+}
+
+// ── Print helper ─────────────────────────────────────────────
+// window.print() ne bloque pas forcément l'exécution sur tous les
+// navigateurs/configurations d'impression (silencieuse, kiosque, etc.).
+// On attend l'évènement 'afterprint' avant de retirer la classe qui
+// affiche le contenu à imprimer, avec un filet de sécurité (setTimeout)
+// au cas où cet évènement ne se déclenche pas.
+function printSection(cls) {
+  document.body.classList.add(cls);
+  let done = false;
+  const cleanup = () => {
+    if (done) return;
+    done = true;
+    document.body.classList.remove(cls);
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  window.print();
+  setTimeout(cleanup, 2000);
 }
 
 // ── Print ticket ──────────────────────────────────────────────
@@ -1120,7 +1140,7 @@ async function openDailyReport() {
       Imprime le ${new Date().toLocaleString('fr-FR')}<br>
       ${escHtml(ENIGMA_CONFIG.businessName)}
     </div>`;
-  document.body.classList.add('print-report'); window.print(); document.body.classList.remove('print-report');
+  printSection('print-report');
 }
 
 // ── Reset ─────────────────────────────────────────────────────
