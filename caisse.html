@@ -87,9 +87,13 @@
 <div id="qr-scan-overlay" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:400;display:flex;align-items:center;justify-content:center;">
   <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:18px;max-width:360px;width:92vw;text-align:center;">
     <div style="font-weight:700;margin-bottom:10px;">📷 Scanner le QR du coupon</div>
-    <video id="qr-video" style="width:100%;border-radius:8px;background:#000;" playsinline muted></video>
-    <div id="qr-scan-status" style="font-size:12px;color:var(--text3);margin-top:8px;">Positionnez le QR code face à la caméra…</div>
-    <button class="btn btn-ghost btn-full" style="margin-top:10px;" onclick="closeQrScanner()">Annuler</button>
+    <video id="qr-video" style="width:100%;border-radius:8px;background:#000;display:block;" playsinline muted autoplay></video>
+    <div id="qr-scan-status" style="font-size:12px;color:var(--text3);margin-top:8px;min-height:32px;">Positionnez le QR code face à la caméra…</div>
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="document.getElementById('qr-file-input').click()">🖼️ Depuis une image</button>
+      <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="closeQrScanner()">Annuler</button>
+    </div>
+    <input type="file" id="qr-file-input" accept="image/*" style="display:none;" onchange="scanQrFromFile(this)" />
   </div>
 </div>
 
@@ -306,7 +310,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
+<script src="shared/jsQR.min.js"></script>
 <script src="shared/config.js"></script>
 <script src="shared/auth.js"></script>
 <script>
@@ -599,51 +603,180 @@ async function validateVoucher() {
 }
 
 
-// ── Scanner QR (caméra) ──────────────────────────────────────
-let qrStream = null, qrRAF = null;
+// ── Scanner QR (caméra) ────────────────────────────────
+let qrStream = null, qrRAF = null, qrCanvas = null, qrCtx = null, _jsqrPromise = null;
+
+// jsQR n'existe pas sur cdnjs : la lib est vendue dans shared/, avec repli CDN.
+function _loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src; s.async = true;
+    s.onload  = () => resolve();
+    s.onerror = () => reject(new Error('échec chargement ' + src));
+    document.head.appendChild(s);
+  });
+}
+
+function ensureJsQR() {
+  if (typeof jsQR === 'function') return Promise.resolve();
+  if (_jsqrPromise) return _jsqrPromise;
+  const sources = [
+    'shared/jsQR.min.js',
+    'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js',
+    'https://unpkg.com/jsqr@1.4.0/dist/jsQR.js',
+  ];
+  _jsqrPromise = (async () => {
+    for (const src of sources) {
+      try { await _loadScript(src); } catch (e) { continue; }
+      if (typeof jsQR === 'function') return;
+    }
+    _jsqrPromise = null;
+    throw new Error('lecteur QR indisponible');
+  })();
+  return _jsqrPromise;
+}
+
+function _qrCtx(w, h) {
+  if (!qrCanvas) {
+    qrCanvas = document.createElement('canvas');
+    qrCtx = qrCanvas.getContext('2d', { willReadFrequently: true });
+  }
+  qrCanvas.width = w; qrCanvas.height = h;
+  return qrCtx;
+}
+
+function _qrStatus(msg, isErr) {
+  const el = document.getElementById('qr-scan-status');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.color = isErr ? 'var(--red)' : 'var(--text3)';
+}
+
+function _camErrMsg(e) {
+  const n = (e && e.name) || '';
+  if (n === 'NotAllowedError' || n === 'SecurityError')
+    return 'Accès caméra refusé. Autorisez la caméra dans le navigateur, ou utilisez « Depuis une image ».';
+  if (n === 'NotFoundError' || n === 'OverconstrainedError')
+    return 'Aucune caméra détectée sur cet appareil.';
+  if (n === 'NotReadableError')
+    return 'Caméra occupée par une autre application.';
+  return 'Caméra inaccessible : ' + ((e && e.message) || e);
+}
+
+// Le QR ne contient que le code, mais on tolère une URL ou du texte autour.
+function normalizeCouponCode(raw) {
+  let s = String(raw || '').trim();
+  try {
+    const u = new URL(s);
+    s = u.searchParams.get('code') || u.searchParams.get('c')
+        || u.pathname.split('/').filter(Boolean).pop() || s;
+  } catch (_) { /* pas une URL : on garde tel quel */ }
+  s = s.trim().toUpperCase();
+  const m = s.match(/EG-[A-Z0-9]{4}-[A-Z0-9]{4}/);
+  return m ? m[0] : s;
+}
+
+function onQrDecoded(raw) {
+  const code = normalizeCouponCode(raw);
+  closeQrScanner();
+  document.getElementById('inp-voucher').value = code;
+  validateVoucher();
+}
 
 async function openQrScanner() {
   const overlay = document.getElementById('qr-scan-overlay');
-  const video = document.getElementById('qr-video');
-  const status = document.getElementById('qr-scan-status');
+  const video   = document.getElementById('qr-video');
   overlay.classList.remove('hidden');
-  status.textContent = 'Positionnez le QR code face à la caméra…';
-  try {
-    qrStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-  } catch (e) {
-    try { qrStream = await navigator.mediaDevices.getUserMedia({ video: true }); }
-    catch (e2) { status.textContent = 'Caméra inaccessible : ' + (e2.message||e2); return; }
+  _qrStatus('Chargement du lecteur…');
+
+  try { await ensureJsQR(); }
+  catch (e) {
+    _qrStatus('Lecteur QR non chargé (shared/jsQR.min.js manquant ?). Saisissez le code à la main.', true);
+    return;
   }
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    _qrStatus(window.isSecureContext === false
+      ? 'La caméra exige une connexion sécurisée (https). Utilisez « Depuis une image ».'
+      : 'Caméra non supportée par ce navigateur. Utilisez « Depuis une image ».', true);
+    return;
+  }
+
+  _qrStatus('Ouverture de la caméra…');
+  try {
+    qrStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false,
+    });
+  } catch (e) {
+    try { qrStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false }); }
+    catch (e2) { _qrStatus(_camErrMsg(e2), true); return; }
+  }
+
   video.srcObject = qrStream;
-  await video.play();
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
+  try { await video.play(); } catch (_) { /* certains navigateurs rejettent play() : le flux tourne quand même */ }
+
+  _qrStatus('Positionnez le QR code face à la caméra…');
+  let frames = 0;
   const scan = () => {
     if (!qrStream) return;
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const result = jsQR(img.data, img.width, img.height);
-      if (result && result.data) {
-        status.textContent = 'Code détecté : ' + result.data;
-        document.getElementById('inp-voucher').value = result.data.trim().toUpperCase();
-        closeQrScanner();
-        validateVoucher();
-        return;
+    try {
+      if (video.readyState >= 2 && video.videoWidth > 0) {
+        const w = video.videoWidth, h = video.videoHeight;
+        const ctx = _qrCtx(w, h);
+        ctx.drawImage(video, 0, 0, w, h);
+        const img = ctx.getImageData(0, 0, w, h);
+        const result = jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
+        if (result && result.data) { onQrDecoded(result.data); return; }
+        if (++frames === 180) _qrStatus('Rien détecté… rapprochez le coupon et évitez les reflets.');
       }
+    } catch (err) {
+      _qrStatus('Erreur de lecture : ' + ((err && err.message) || err), true);
+      return; // on arrête proprement au lieu de boucler dans le vide
     }
     qrRAF = requestAnimationFrame(scan);
   };
   qrRAF = requestAnimationFrame(scan);
 }
 
+// Repli : lecture d'une photo/capture du QR (WhatsApp, caméra bloquée, http…)
+async function scanQrFromFile(input) {
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  document.getElementById('qr-scan-overlay').classList.remove('hidden');
+  _qrStatus('Analyse de l\u2019image…');
+  try { await ensureJsQR(); }
+  catch (e) { _qrStatus('Lecteur QR non chargé.', true); return; }
+
+  const url = URL.createObjectURL(file);
+  const im = new Image();
+  im.onload = () => {
+    try {
+      const max = 1400;
+      const sc = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight));
+      const w = Math.round(im.naturalWidth * sc), h = Math.round(im.naturalHeight * sc);
+      const ctx = _qrCtx(w, h);
+      ctx.drawImage(im, 0, 0, w, h);
+      const d = ctx.getImageData(0, 0, w, h);
+      const r = jsQR(d.data, d.width, d.height, { inversionAttempts: 'attemptBoth' });
+      if (r && r.data) { onQrDecoded(r.data); return; }
+      _qrStatus('Aucun QR détecté dans cette image.', true);
+    } catch (err) {
+      _qrStatus('Erreur : ' + ((err && err.message) || err), true);
+    } finally { URL.revokeObjectURL(url); }
+  };
+  im.onerror = () => { _qrStatus('Image illisible.', true); URL.revokeObjectURL(url); };
+  im.src = url;
+}
+
 function closeQrScanner() {
   document.getElementById('qr-scan-overlay').classList.add('hidden');
-  if (qrRAF) cancelAnimationFrame(qrRAF);
+  if (qrRAF) { cancelAnimationFrame(qrRAF); qrRAF = null; }
   if (qrStream) { qrStream.getTracks().forEach(t => t.stop()); qrStream = null; }
   const video = document.getElementById('qr-video');
   if (video) video.srcObject = null;
+  _qrStatus('Positionnez le QR code face à la caméra…');
 }
 
 // ── Avances ───────────────────────────────────────────────────
