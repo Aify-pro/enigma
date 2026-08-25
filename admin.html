@@ -2083,7 +2083,12 @@ async function loadUsers() {
   document.getElementById('users-list').innerHTML = '<div class="text-muted" style="text-align:center;padding:24px;">Chargement…</div>';
   const { data, error } = await adminApi('list');
   if (error) { toast('Erreur : ' + error, 'err'); return; }
-  usersList = (data?.users || []).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+  // Ce panneau sert à gérer les comptes STAFF/ADMIN uniquement.
+  // Un compte sans rôle explicite (ex: inscription publique du site) n'est PAS du staff
+  // et ne doit ni apparaître ici, ni être traité comme tel.
+  usersList = (data?.users || [])
+    .filter(u => ['admin','staff','sync'].includes((u.app_metadata?.role || '').toLowerCase()))
+    .sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
   renderUsers();
 }
 
@@ -2095,7 +2100,7 @@ function renderUsers() {
   }
   el.innerHTML = usersList.map(u => {
     const name   = u.user_metadata?.display_name || '';
-    const role   = (u.app_metadata?.role || 'staff').toLowerCase();
+    const role   = (u.app_metadata?.role || 'user').toLowerCase();
     const colors = avatarColors(name || u.email);
     const initials = avatarInitials(name || u.email);
     const avatarUrl = u.user_metadata?.avatar_url || '';
@@ -2127,7 +2132,7 @@ function editUser(id) {
   document.getElementById('user-email').value      = u.email;
   document.getElementById('user-pass').value       = '';
   document.getElementById('user-avatar-url').value = u.user_metadata?.avatar_url || '';
-  setRole((u.app_metadata?.role || 'staff').toLowerCase());
+  setRole((u.app_metadata?.role || 'user').toLowerCase());
   document.getElementById('user-pass-section').style.display = 'none';
   document.getElementById('user-form-title').textContent     = 'Modifier l\'utilisateur';
   document.getElementById('user-save-btn').textContent       = 'Mettre à jour';

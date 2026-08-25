@@ -88,7 +88,7 @@ if (q.get('e') === 'role') document.getElementById('l-err').textContent = "Ce co
 // Si déjà connecté (et staff/admin), aller directement à l'accueil
 window.addEventListener('load', async () => {
   const { data: { session } } = await sb.auth.getSession();
-  if (session && ['admin','staff'].includes((session.user.app_metadata?.role || 'staff').toLowerCase())) window.location.replace(HOME);
+  if (session && ['admin','staff'].includes((session.user.app_metadata?.role || 'user').toLowerCase())) window.location.replace(HOME);
 });
 
 function togglePw() {
@@ -113,7 +113,7 @@ async function doLogin(e) {
     lock.classList.add('shake'); document.getElementById('l-pass').select();
     return;
   }
-  const role = (data.session?.user?.app_metadata?.role || 'staff').toLowerCase();
+  const role = (data.session?.user?.app_metadata?.role || 'user').toLowerCase();
   if (!['admin','staff'].includes(role)) {
     await sb.auth.signOut();
     err.textContent = "Ce compte n'a pas accès à l'espace staff.";
