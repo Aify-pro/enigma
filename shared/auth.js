@@ -123,7 +123,8 @@ async function requireAuth() {
   currentUser = {
     email:        session.user.email,
     // Rôle lu depuis app_metadata uniquement — non modifiable par l'utilisateur
-    role:         (session.user.app_metadata?.role || 'staff').toLowerCase(),
+    // IMPORTANT : un rôle absent/vide NE DOIT JAMAIS être traité comme 'staff'.
+    role:         (session.user.app_metadata?.role || 'user').toLowerCase(),
     display_name: session.user.user_metadata?.display_name || session.user.email.split('@')[0],
     avatar_url:   session.user.user_metadata?.avatar_url || '',
   };
