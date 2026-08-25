@@ -237,9 +237,12 @@ let loadedFrom = null, loadedTo = null;
 let holdMinutes = 45;
 let countdownTimer = null;
 
-function todayIso() { return new Date().toISOString().slice(0,10); }
-function addDays(iso, n) { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
-function isoOf(d) { return d.toISOString().slice(0,10); }
+// Toujours calculer les dates en heure LOCALE, jamais via toISOString()
+// (qui convertit en UTC et peut décaler le jour de ±1 selon le fuseau horaire du navigateur).
+function pad2(n) { return String(n).padStart(2,'0'); }
+function isoOf(d) { return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
+function todayIso() { return isoOf(new Date()); }
+function addDays(iso, n) { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate()+n); return isoOf(d); }
 
 window.addEventListener('load', async () => {
   try { await requireAuth(); } catch(e) { return; }
