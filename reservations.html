@@ -202,6 +202,28 @@
   </div>
 </div>
 
+<div class="modal-overlay hidden" id="cancelModal">
+  <div class="modal-box">
+    <div class="modal-title">✕ Annuler la réservation</div>
+    <div id="cancelSummary" class="text-muted" style="font-size:13px;margin-bottom:14px;line-height:1.7;"></div>
+    <div id="cancel-24h-warning" class="hidden" style="background:rgba(248,113,113,.12);color:var(--red);font-size:12px;padding:8px 10px;border-radius:8px;margin-bottom:12px;line-height:1.5;"></div>
+    <div class="field"><label>Motif *</label>
+      <select id="cancel-reason">
+        <option value="client_request">Demande du client</option>
+        <option value="maintenance">Maintenance de la salle</option>
+        <option value="power_outage">Coupure de courant</option>
+        <option value="other">Autre</option>
+      </select>
+    </div>
+    <div class="field" id="cancel-penalty-field"><label>Pénalité (FCFA, optionnel)</label><input type="number" id="cancel-penalty" min="0" placeholder="0" /></div>
+    <div class="field"><label>Note (optionnel, visible par le client)</label><input type="text" id="cancel-notes" placeholder="Précision à ajouter dans l'email…" /></div>
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <button class="btn btn-ghost btn-full" onclick="closeCancelModal()">Retour</button>
+      <button class="btn btn-primary btn-full" id="cancel-confirm-btn" onclick="confirmCancel()">✓ Confirmer l'annulation</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay hidden" id="settingsModal">
   <div class="modal-box">
     <div class="modal-title">⚙️ Délai avant expiration d'une demande</div>
@@ -209,7 +231,7 @@
       Tant qu'une demande reste « en attente » sans avance versée, elle bloque le créneau (le site public l'affiche comme indisponible). Passé ce délai, la demande expire automatiquement et le créneau redevient réservable.
     </p>
     <div class="preset-row" id="hold-presets"></div>
-    <div class="field"><label>Ou délai personnalisé (minutes)</label><input type="number" id="hold-custom" min="1" max="1440" /></div>
+    <div class="field"><label>Ou délai personnalisé (minutes)</label><input type="number" id="hold-custom" min="1" max="2880" /></div>
     <div style="display:flex;gap:8px;margin-top:10px;">
       <button class="btn btn-ghost btn-full" onclick="closeSettingsModal()">Annuler</button>
       <button class="btn btn-primary btn-full" id="hold-save-btn" onclick="saveHoldMinutes()">✓ Enregistrer</button>
@@ -226,7 +248,7 @@ const MODE_LABELS = { normale:'Normale', moyen:'Moyen', extreme:'Extreme' };
 const DOWS = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
 const DEFAULT_STATUSES = ['pending','deposit_received','confirmed','no_show'];
 
-let rows = [], rooms = {}, roomList = [], selectedId = null, depositTargetId = null, allSlots = [];
+let rows = [], rooms = {}, roomList = [], selectedId = null, depositTargetId = null, cancelTargetId = null, allSlots = [];
 let viewMode = 'day';                       // 'day' | 'range'
 let selectedDate = todayIso();              // pour le mode Jour
 let rangeFrom = todayIso(), rangeTo = todayIso(); // pour le mode Période
@@ -533,7 +555,7 @@ function showDetail(id) {
     actions = `
       <button class="btn btn-primary btn-full mt-2" onclick="openDepositModal('${r.id}')">💰 Valider → saisir l'avance</button>
       <button class="btn btn-ghost btn-full mt-1" onclick="confirmNoDeposit('${r.id}')">🤝 Client de confiance — paiement à l'arrivée</button>
-      <button class="btn btn-ghost btn-full mt-1" onclick="setStatus('${r.id}','cancelled')">Annuler la demande</button>`;
+      <button class="btn btn-ghost btn-full mt-1" onclick="openCancelModal('${r.id}')">Annuler la demande</button>`;
     if (r.expires_at) {
       expiryNote = `<p class="text-muted" style="font-size:11px;margin-top:10px;">Expire automatiquement le ${new Date(r.expires_at).toLocaleString('fr-FR')} si aucune avance n'est enregistrée.</p>`;
     }
@@ -541,7 +563,7 @@ function showDetail(id) {
   else if (r.status === 'deposit_received') actions = `
       <button class="btn btn-success btn-full mt-2" onclick="confirmArrival('${r.id}')">✓ Client arrivé / partie confirmée</button>
       <button class="btn btn-ghost btn-full mt-1" onclick="setStatus('${r.id}','no_show')">Client absent</button>
-      <button class="btn btn-ghost btn-full mt-1" onclick="setStatus('${r.id}','cancelled')">Annuler (libérer le créneau)</button>`;
+      <button class="btn btn-ghost btn-full mt-1" onclick="openCancelModal('${r.id}')">Annuler (libérer le créneau)</button>`;
   else if (r.status === 'confirmed') actions = `
       <button class="btn btn-primary btn-full mt-2" onclick="window.open('caisse.html?res=${r.id}','_blank')">🧾 Ouvrir à la caisse</button>
       <div class="notice-ok mt-2">Partie confirmée. Encaissez le solde à la caisse — la session est préremplie automatiquement.</div>`;
@@ -600,6 +622,65 @@ async function confirmNoDeposit(id) {
   }
   toast('Réservation confirmée — créneau bloqué, paiement à l\'arrivée', 'ok');
   await loadRequests();
+}
+
+// ── Annulation (motif + pénalité éventuelle) ─────────────────────
+function openCancelModal(id) {
+  const r = rows.find(x => x.id === id); if (!r) return;
+  cancelTargetId = id;
+  const room = rooms[r.room_id] || {};
+  document.getElementById('cancelSummary').innerHTML = `
+    <b>${escHtml(r.team_name || r.client_name)}</b><br>
+    ${escHtml(room.name || '?')} · ${fmtDate(r.session_date)} · ${r.time_slot}`;
+  document.getElementById('cancel-reason').value = 'client_request';
+  document.getElementById('cancel-penalty').value = '';
+  document.getElementById('cancel-notes').value = '';
+  updateCancelWarning(r);
+  document.getElementById('cancel-reason').onchange = () => updateCancelWarning(r);
+  document.getElementById('cancelModal').classList.remove('hidden');
+}
+function updateCancelWarning(r) {
+  const reason = document.getElementById('cancel-reason').value;
+  const warn = document.getElementById('cancel-24h-warning');
+  const penaltyField = document.getElementById('cancel-penalty-field');
+  const isBusinessSide = reason === 'maintenance' || reason === 'power_outage';
+  penaltyField.classList.toggle('hidden', isBusinessSide);
+  if (isBusinessSide) { warn.classList.add('hidden'); return; }
+  let sessionDt = null;
+  try { sessionDt = new Date(r.session_date + 'T' + r.time_slot + ':00'); } catch (_e) {}
+  const lessThan24h = sessionDt && (sessionDt - new Date()) < 24*3600000;
+  if (lessThan24h) {
+    warn.textContent = '⚠️ Séance dans moins de 24h : selon notre politique, une pénalité peut s\'appliquer.';
+    warn.classList.remove('hidden');
+  } else {
+    warn.classList.add('hidden');
+  }
+}
+function closeCancelModal() {
+  cancelTargetId = null;
+  document.getElementById('cancelModal').classList.add('hidden');
+}
+async function confirmCancel() {
+  if (!cancelTargetId) return;
+  const reason = document.getElementById('cancel-reason').value;
+  const penaltyRaw = document.getElementById('cancel-penalty').value;
+  const penalty = penaltyRaw ? parseInt(penaltyRaw) : null;
+  const notes = document.getElementById('cancel-notes').value.trim() || null;
+  if (penalty !== null && (isNaN(penalty) || penalty < 0)) return toast('Montant de pénalité invalide', 'err');
+  const btn = document.getElementById('cancel-confirm-btn'); btn.disabled = true;
+  try {
+    const { error } = await sb.rpc('staff_cancel_reservation', {
+      p_reservation_id: cancelTargetId,
+      p_reason: reason,
+      p_penalty_amount_xof: penalty,
+      p_penalty_notes: notes,
+      p_operator: currentUser.display_name
+    });
+    if (error) return toast('Erreur : ' + error.message, 'err');
+    toast('Réservation annulée', 'ok');
+    closeCancelModal();
+    await loadRequests();
+  } finally { btn.disabled = false; }
 }
 
 // ── Validation + saisie de l'avance (RPC atomique côté serveur) ─
@@ -685,8 +766,9 @@ function escHtml(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp
 // ── Réglage du délai d'expiration ────────────────────────────────
 function buildHoldPresets() {
   const el = document.getElementById('hold-presets');
-  const opts = [15,30,45,60,90,120,240];
-  el.innerHTML = opts.map(m => `<span class="chip-sm" data-m="${m}">${m>=60 ? (m/60)+'h' : m+' min'}</span>`).join('');
+  const opts = [15,30,45,60,90,120,180,240,360,720,1440,2880];
+  const label = m => { if (m < 60) return m+' min'; const h = Math.floor(m/60), r = m%60; return r ? `${h}h${String(r).padStart(2,'0')}` : `${h}h`; };
+  el.innerHTML = opts.map(m => `<span class="chip-sm" data-m="${m}">${label(m)}</span>`).join('');
   el.addEventListener('click', e => {
     const c = e.target.closest('.chip-sm'); if (!c) return;
     el.querySelectorAll('.chip-sm').forEach(x => x.classList.remove('active')); c.classList.add('active');
@@ -701,7 +783,7 @@ function openSettingsModal() {
 function closeSettingsModal() { document.getElementById('settingsModal').classList.add('hidden'); }
 async function saveHoldMinutes() {
   const minutes = parseInt(document.getElementById('hold-custom').value) || 0;
-  if (minutes < 1 || minutes > 1440) return toast('Délai invalide (1 à 1440 minutes)', 'err');
+  if (minutes < 1 || minutes > 2880) return toast('Délai invalide (1 à 2880 minutes, soit 48h max)', 'err');
   const btn = document.getElementById('hold-save-btn'); btn.disabled = true;
   try {
     const { error } = await sb.rpc('staff_set_reservation_hold_minutes', { p_minutes: minutes, p_operator: currentUser.display_name });
