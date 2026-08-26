@@ -567,7 +567,7 @@ function showDetail(id) {
   else if (r.status === 'confirmed') actions = `
       <button class="btn btn-primary btn-full mt-2" onclick="window.open('caisse.html?res=${r.id}','_blank')">🧾 Ouvrir à la caisse</button>
       <div class="notice-ok mt-2">Partie confirmée. Encaissez le solde à la caisse — la session est préremplie automatiquement.</div>`;
-  else actions = `<button class="btn btn-ghost btn-full mt-2" onclick="setStatus('${r.id}','pending')">Réactiver la demande</button>`;
+  else actions = `<button class="btn btn-ghost btn-full mt-2" onclick="reactivateReservation('${r.id}')">Réactiver la demande</button>`;
 
   const modeNote = r.game_mode === 'extreme' ? ` · <span style="color:var(--red)">+${fmtXof(room.extreme_mode_price_xof||10000)} FCFA</span>` : '';
 
@@ -621,6 +621,20 @@ async function confirmNoDeposit(id) {
     return;
   }
   toast('Réservation confirmée — créneau bloqué, paiement à l\'arrivée', 'ok');
+  await loadRequests();
+}
+
+// ── Réactivation (expirée/annulée → pending, avec un nouveau délai) ─
+async function reactivateReservation(id) {
+  const r = rows.find(x => x.id === id); if (!r) return;
+  const ok = confirm(`Réactiver cette demande pour ${holdMinutes >= 60 ? (Math.floor(holdMinutes/60)+'h'+(holdMinutes%60 ? String(holdMinutes%60).padStart(2,'0') : '')) : holdMinutes+' min'} ?\nLe créneau sera de nouveau bloqué pendant ce délai.`);
+  if (!ok) return;
+  const { error } = await sb.rpc('staff_reactivate_reservation', {
+    p_reservation_id: id,
+    p_operator: currentUser.display_name
+  });
+  if (error) return toast('Erreur : ' + error.message, 'err');
+  toast('Demande réactivée — nouveau délai appliqué', 'ok');
   await loadRequests();
 }
 
