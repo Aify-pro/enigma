@@ -17,6 +17,14 @@ const ENIGMA_CONFIG = {
   currency:       'FCFA',
   thermalMm:      80,   // largeur du papier thermique : 58 ou 80
 
+  teamBuildingCategories: [
+    { value: 'ecole',       label: '🎓 École' },
+    { value: 'entreprise',  label: '🏢 Entreprise' },
+    { value: 'anniversaire',label: '🎂 Anniversaire' },
+    { value: 'entre_amis',  label: '👥 Entre amis' },
+    { value: 'autre',       label: '✨ Autre' },
+  ],
+
   expenseCategories: [
     { value: 'loyer',        label: '🏢 Loyer' },
     { value: 'salaires',     label: '👤 Salaires' },

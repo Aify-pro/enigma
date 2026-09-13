@@ -34,6 +34,7 @@ const ENIGMA_NAV = [
   { href: 'joueurs.html',        ico: '🏆', label: 'Joueurs' },
   { href: 'depenses.html',       ico: '💸', label: 'Dépenses' },
   { href: 'planning.html',       ico: '📅', label: 'Planning' },
+  { href: 'evenements.html',     ico: '🧩', label: 'Événements' },
   { href: 'rapprochements.html', ico: '📊', label: 'Rapprochements', admin: true, id: 'nav-rapprochements' },
   { href: 'admin.html',          ico: '⚙️', label: 'Admin',          admin: true, id: 'nav-admin' },
   { href: 'site.html',           ico: '🖥️', label: 'Site public',    admin: true, id: 'nav-site' },
