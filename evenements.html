@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Événements — Enigma</title>
+<link rel="stylesheet" href="shared/style.css">
+<style>
+  .status-pill { display:inline-flex; align-items:center; gap:6px; }
+  .qr-box { display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .qr-box .code-big { font-size:20px; letter-spacing:.08em; }
+  .code-big { font-family: var(--mono); font-weight:700; }
+  .row-actions { white-space:nowrap; display:flex; gap:6px; }
+  #detail-header { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+  #detail-header h2 { font-size:18px; font-weight:700; }
+  .team-code-cell { font-family: var(--mono); font-size:15px; letter-spacing:.05em; }
+  @media print {
+    body > *:not(#qr-print-area) { display:none !important; }
+    #qr-print-area { display:flex !important; }
+  }
+  #qr-print-area { display:none; }
+</style>
+</head>
+<body>
+<nav class="navbar"><!-- généré par shared/auth.js --></nav>
+<div id="toast-container"></div>
+
+<div class="page">
+
+  <!-- ══════════════ VUE LISTE DES ÉVÉNEMENTS ══════════════ -->
+  <div id="view-list">
+    <div class="flex-between" style="margin-bottom:20px;">
+      <div class="page-title" style="margin:0;">🧩 Événements</div>
+      <button class="btn btn-primary" onclick="openEventModal()">+ Nouvel événement</button>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Nom</th><th>Catégorie</th><th>Client</th><th>Date</th><th>Équipes</th><th>Statut</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="events-body">
+            <tr><td colspan="7" class="text-muted" style="text-align:center;padding:24px;">Chargement…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ VUE DÉTAIL D'UN ÉVÉNEMENT ══════════════ -->
+  <div id="view-detail" class="hidden">
+    <div id="detail-header">
+      <div>
+        <button class="btn btn-ghost btn-sm" onclick="backToList()">← Retour</button>
+        <h2 id="detail-title" style="display:inline;margin-left:10px;"></h2>
+        <span id="detail-status" style="margin-left:10px;"></span>
+      </div>
+      <div id="detail-controls" style="display:flex;gap:8px;"></div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="enigmas" onclick="switchTab('enigmas')">Énigmes</button>
+      <button class="tab-btn" data-tab="teams" onclick="switchTab('teams')">Équipes</button>
+      <button class="tab-btn" data-tab="live" onclick="switchTab('live')">Suivi & jury</button>
+      <button class="tab-btn" data-tab="ranking" onclick="switchTab('ranking')">Classement</button>
+    </div>
+
+    <!-- ── Énigmes ── -->
+    <div class="tab-panel active" id="panel-enigmas">
+      <div class="flex-between" style="margin-bottom:12px;">
+        <div class="text-muted" style="font-size:12px;">Chaque énigme a un code unique → QR à imprimer sur le support physique.</div>
+        <button class="btn btn-primary btn-sm" onclick="openEnigmaModal()">+ Nouvelle énigme</button>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Code</th><th>Titre</th><th>Points</th><th>Validation</th><th>Actions</th></tr></thead>
+            <tbody id="enigmas-body"><tr><td colspan="5" class="text-muted" style="text-align:center;padding:20px;">Chargement…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Équipes ── -->
+    <div class="tab-panel" id="panel-teams">
+      <div class="flex-between" style="margin-bottom:12px;">
+        <div class="text-muted" style="font-size:12px;">Le code équipe est remis physiquement à chaque équipe (kit, carte…).</div>
+        <button class="btn btn-primary btn-sm" onclick="openTeamModal()">+ Nouvelle équipe</button>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>N°</th><th>Nom</th><th>Code équipe</th><th>Actions</th></tr></thead>
+            <tbody id="teams-body"><tr><td colspan="4" class="text-muted" style="text-align:center;padding:20px;">Chargement…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Suivi & jury ── -->
+    <div class="tab-panel" id="panel-live">
+      <div class="card" style="margin-bottom:14px;">
+        <div class="flex-between">
+          <div>
+            <div class="card-title" style="margin:0 0 4px;">État de l'événement</div>
+            <div id="live-status-text" class="text-muted" style="font-size:13px;"></div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-success btn-sm" id="btn-start" onclick="startEventNow()">▶ Démarrer</button>
+            <button class="btn btn-danger btn-sm" id="btn-finish" onclick="finishEventNow()">■ Terminer</button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="live-dot">temps réel</span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Heure</th><th>Équipe</th><th>Énigme</th><th>Réponse</th><th>Auto</th><th>Statut</th><th>Points</th><th>Actions</th></tr></thead>
+            <tbody id="submissions-body"><tr><td colspan="8" class="text-muted" style="text-align:center;padding:20px;">Chargement…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Classement ── -->
+    <div class="tab-panel" id="panel-ranking">
+      <div class="card">
+        <div class="card-title">Classement <span id="ranking-note" class="text-muted" style="text-transform:none;font-weight:400;"></span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>#</th><th>Équipe</th><th>Points</th><th>Dernière validation</th></tr></thead>
+            <tbody id="ranking-body"><tr><td colspan="4" class="text-muted" style="text-align:center;padding:20px;">Chargement…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════ MODALES ══════════════ -->
+
+<div class="modal-overlay hidden" id="modal-event">
+  <div class="modal-box">
+    <div class="modal-title" id="event-modal-title">Nouvel événement</div>
+    <input type="hidden" id="ev-id">
+    <div class="field"><label>Nom *</label><input type="text" id="ev-name" placeholder="Ex. Séminaire Groupe X — Novembre"></div>
+    <div class="field-row">
+      <div class="field"><label>Catégorie</label><select id="ev-category"></select></div>
+      <div class="field"><label>Date</label><input type="date" id="ev-date"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Client</label><input type="text" id="ev-client" placeholder="Nom du client"></div>
+      <div class="field"><label>Taille d'équipe</label><input type="number" id="ev-teamsize" min="1" placeholder="4"></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px;">
+      <button class="btn btn-ghost btn-full" onclick="closeModal('modal-event')">Annuler</button>
+      <button class="btn btn-primary btn-full" onclick="saveEvent()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="modal-duplicate">
+  <div class="modal-box">
+    <div class="modal-title">Dupliquer comme modèle</div>
+    <input type="hidden" id="dup-source-id">
+    <div class="field"><label>Nom du nouvel événement *</label><input type="text" id="dup-name"></div>
+    <div class="field"><label>Date</label><input type="date" id="dup-date"></div>
+    <div class="notice">Copie les énigmes (avec de nouveaux codes/QR). Équipes et réponses ne sont pas copiées.</div>
+    <div style="display:flex;gap:10px;margin-top:8px;">
+      <button class="btn btn-ghost btn-full" onclick="closeModal('modal-duplicate')">Annuler</button>
+      <button class="btn btn-primary btn-full" onclick="confirmDuplicate()">Dupliquer</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="modal-enigma">
+  <div class="modal-box" style="width:560px;">
+    <div class="modal-title" id="enigma-modal-title">Nouvelle énigme</div>
+    <input type="hidden" id="en-id">
+    <div class="field"><label>Titre (interne) *</label><input type="text" id="en-title" placeholder="Ex. Énigme 3 — Le code du coffre"></div>
+    <div class="field"><label>Question / consigne *</label><textarea id="en-question" rows="3" placeholder="Texte affiché aux équipes…"></textarea></div>
+    <div class="field"><label>Image (URL, optionnel)</label><input type="text" id="en-image" placeholder="https://…"></div>
+    <div class="field"><label>Réponse(s) attendue(s) *</label><input type="text" id="en-answers" placeholder="séparées par une virgule — variantes acceptées"></div>
+    <div class="field-row">
+      <div class="field"><label>Points</label><input type="number" id="en-points" min="0" value="10"></div>
+      <div class="field"><label>Validation</label>
+        <select id="en-mode">
+          <option value="auto">Automatique</option>
+          <option value="manuelle">Manuelle (jury)</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px;">
+      <button class="btn btn-ghost btn-full" onclick="closeModal('modal-enigma')">Annuler</button>
+      <button class="btn btn-primary btn-full" onclick="saveEnigma()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="modal-team">
+  <div class="modal-box">
+    <div class="modal-title" id="team-modal-title">Nouvelle équipe</div>
+    <input type="hidden" id="tm-id">
+    <div class="field-row">
+      <div class="field"><label>N°</label><input type="number" id="tm-number" min="1"></div>
+      <div class="field"><label>Nom *</label><input type="text" id="tm-name" placeholder="Ex. Les Faucons"></div>
+    </div>
+    <div class="field">
+      <label>Code équipe</label>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="tm-code" class="code-big" style="text-transform:uppercase;">
+        <button class="btn btn-ghost btn-icon" type="button" onclick="regenTeamCode()" title="Régénérer">🎲</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px;">
+      <button class="btn btn-ghost btn-full" onclick="closeModal('modal-team')">Annuler</button>
+      <button class="btn btn-primary btn-full" onclick="saveTeam()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="modal-qr">
+  <div class="modal-box" style="width:340px;text-align:center;">
+    <div class="modal-title" id="qr-modal-title">QR code</div>
+    <div class="qr-box">
+      <div id="qr-canvas"></div>
+      <div class="code-big" id="qr-code-text"></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:16px;">
+      <button class="btn btn-ghost btn-full" onclick="closeModal('modal-qr')">Fermer</button>
+      <button class="btn btn-primary btn-full" onclick="printQr()">🖨 Imprimer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Zone dédiée à l'impression du QR (masquée à l'écran, visible uniquement via @media print) -->
+<div id="qr-print-area" style="flex-direction:column;align-items:center;gap:14px;padding:40px;">
+  <img id="print-logo" src="shared/logo.png" style="height:40px;">
+  <div id="print-title" style="font-size:16px;font-weight:700;"></div>
+  <div id="qr-canvas-print"></div>
+  <div id="print-code" style="font-family:monospace;font-size:22px;letter-spacing:.1em;"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="shared/config.js"></script>
+<script src="shared/auth.js"></script>
+<script>
+let events = [];
+let currentEvent = null;
+let enigmas = [];
+let teams = [];
+let liveChannel = null;
+let liveTimer = null;
+
+window.addEventListener('load', async () => {
+  try { await requireAuth(); } catch (e) { return; }
+  ENIGMA_CONFIG.teamBuildingCategories.forEach(c => {
+    document.getElementById('ev-category').insertAdjacentHTML('beforeend', `<option value="${c.value}">${c.label}</option>`);
+  });
+  loadEvents();
+});
+
+function catLabel(v) {
+  const c = ENIGMA_CONFIG.teamBuildingCategories.find(x => x.value === v);
+  return c ? c.label : v;
+}
+function statusBadge(s) {
+  if (s === 'en_cours') return '<span class="badge badge-green">● En cours</span>';
+  if (s === 'termine')  return '<span class="badge badge-muted">Terminé</span>';
+  return '<span class="badge badge-yellow">Brouillon</span>';
+}
+function genCode(len = 6) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sans 0/O ni 1/I
+  let out = '';
+  for (let i = 0; i < len; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return out;
+}
+
+// ══════════════ LISTE DES ÉVÉNEMENTS ══════════════
+
+async function loadEvents() {
+  const { data, error } = await sb.from('tb_events').select('*, tb_teams(count)').order('created_at', { ascending: false });
+  if (error) { toast('Erreur chargement événements', 'err'); return; }
+  events = data || [];
+  const tbody = document.getElementById('events-body');
+  if (!events.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-muted" style="text-align:center;padding:24px;">Aucun événement — créez le premier</td></tr>';
+    return;
+  }
+  tbody.innerHTML = events.map(e => `
+    <tr>
+      <td><strong>${escHtml(e.name)}</strong></td>
+      <td>${catLabel(e.category)}</td>
+      <td>${escHtml(e.client_name || '—')}</td>
+      <td>${e.event_date ? formatDate(e.event_date) : '—'}</td>
+      <td class="num">${e.tb_teams?.[0]?.count ?? 0}</td>
+      <td>${statusBadge(e.status)}</td>
+      <td class="row-actions">
+        <button class="btn btn-primary btn-sm" onclick="openEvent('${e.id}')">Ouvrir</button>
+        <button class="btn btn-ghost btn-sm" onclick="openDuplicateModal('${e.id}')">Dupliquer</button>
+        <button class="btn btn-ghost btn-sm" onclick="editEvent('${e.id}')">✎</button>
+      </td>
+    </tr>`).join('');
+}
+
+function openEventModal() {
+  document.getElementById('event-modal-title').textContent = 'Nouvel événement';
+  document.getElementById('ev-id').value = '';
+  document.getElementById('ev-name').value = '';
+  document.getElementById('ev-category').value = 'autre';
+  document.getElementById('ev-date').value = '';
+  document.getElementById('ev-client').value = '';
+  document.getElementById('ev-teamsize').value = '';
+  showModal('modal-event');
+}
+function editEvent(id) {
+  const e = events.find(x => x.id === id); if (!e) return;
+  document.getElementById('event-modal-title').textContent = 'Modifier l\'événement';
+  document.getElementById('ev-id').value = e.id;
+  document.getElementById('ev-name').value = e.name;
+  document.getElementById('ev-category').value = e.category;
+  document.getElementById('ev-date').value = e.event_date || '';
+  document.getElementById('ev-client').value = e.client_name || '';
+  document.getElementById('ev-teamsize').value = e.team_size || '';
+  showModal('modal-event');
+}
+async function saveEvent() {
+  const id = document.getElementById('ev-id').value;
+  const payload = {
+    name: document.getElementById('ev-name').value.trim(),
+    category: document.getElementById('ev-category').value,
+    event_date: document.getElementById('ev-date').value || null,
+    client_name: document.getElementById('ev-client').value.trim() || null,
+    team_size: parseInt(document.getElementById('ev-teamsize').value) || null,
+  };
+  if (!payload.name) return toast('Le nom est requis', 'err');
+  const q = id ? sb.from('tb_events').update(payload).eq('id', id) : sb.from('tb_events').insert([payload]);
+  const { error } = await q;
+  if (error) return toast('Erreur enregistrement', 'err');
+  toast(id ? 'Événement mis à jour' : 'Événement créé', 'ok');
+  closeModal('modal-event');
+  loadEvents();
+}
+
+function openDuplicateModal(id) {
+  const e = events.find(x => x.id === id); if (!e) return;
+  document.getElementById('dup-source-id').value = id;
+  document.getElementById('dup-name').value = e.name + ' (copie)';
+  document.getElementById('dup-date').value = '';
+  showModal('modal-duplicate');
+}
+async function confirmDuplicate() {
+  const sourceId = document.getElementById('dup-source-id').value;
+  const name = document.getElementById('dup-name').value.trim();
+  const date = document.getElementById('dup-date').value || null;
+  if (!name) return toast('Le nom est requis', 'err');
+  const { data, error } = await sb.rpc('tb_duplicate_event', { p_source_event_id: sourceId, p_new_name: name, p_event_date: date });
+  if (error) return toast('Erreur duplication : ' + error.message, 'err');
+  toast('Événement dupliqué', 'ok');
+  closeModal('modal-duplicate');
+  loadEvents();
+}
+
+// ══════════════ VUE DÉTAIL ══════════════
+
+async function openEvent(id) {
+  const { data, error } = await sb.from('tb_events').select('*').eq('id', id).single();
+  if (error || !data) return toast('Événement introuvable', 'err');
+  currentEvent = data;
+  document.getElementById('view-list').classList.add('hidden');
+  document.getElementById('view-detail').classList.remove('hidden');
+  renderDetailHeader();
+  switchTab('enigmas');
+  loadEnigmas();
+  loadTeams();
+}
+function backToList() {
+  stopLiveUpdates();
+  document.getElementById('view-detail').classList.add('hidden');
+  document.getElementById('view-list').classList.remove('hidden');
+  currentEvent = null;
+  loadEvents();
+}
+function renderDetailHeader() {
+  document.getElementById('detail-title').textContent = currentEvent.name;
+  document.getElementById('detail-status').innerHTML = statusBadge(currentEvent.status);
+  document.getElementById('live-status-text').textContent =
+    currentEvent.status === 'brouillon' ? 'Pas encore démarré — les équipes ne peuvent pas encore soumettre de réponses.' :
+    currentEvent.status === 'en_cours' ? 'Événement en cours depuis ' + (currentEvent.started_at ? new Date(currentEvent.started_at).toLocaleTimeString('fr-FR') : '—') :
+    'Événement terminé — classement visible sur le site public.';
+  document.getElementById('btn-start').disabled = currentEvent.status !== 'brouillon';
+  document.getElementById('btn-finish').disabled = currentEvent.status !== 'en_cours';
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  if (name === 'live') { loadSubmissions(); startLiveUpdates(); } else { stopLiveUpdates(); }
+  if (name === 'ranking') loadRanking();
+}
+
+// ── Énigmes ──
+
+async function loadEnigmas() {
+  const { data, error } = await sb.from('tb_enigmas').select('*').eq('event_id', currentEvent.id).order('order_index');
+  if (error) return toast('Erreur chargement énigmes', 'err');
+  enigmas = data || [];
+  const tbody = document.getElementById('enigmas-body');
+  if (!enigmas.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-muted" style="text-align:center;padding:20px;">Aucune énigme pour l\'instant</td></tr>';
+    return;
+  }
+  tbody.innerHTML = enigmas.map(en => `
+    <tr>
+      <td class="mono">${en.unique_code}</td>
+      <td>${escHtml(en.title)}</td>
+      <td class="num">${en.points}</td>
+      <td>${en.validation_mode === 'auto' ? '⚙️ Auto' : '👤 Manuelle'}</td>
+      <td class="row-actions">
+        <button class="btn btn-ghost btn-sm" onclick="showQr('${en.unique_code}','${escHtml(en.title)}')">QR</button>
+        <button class="btn btn-ghost btn-sm" onclick="editEnigma('${en.id}')">✎</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteEnigma('${en.id}')">🗑</button>
+      </td>
+    </tr>`).join('');
+}
+function openEnigmaModal() {
+  document.getElementById('enigma-modal-title').textContent = 'Nouvelle énigme';
+  ['en-id','en-title','en-question','en-image','en-answers'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('en-points').value = 10;
+  document.getElementById('en-mode').value = 'auto';
+  showModal('modal-enigma');
+}
+function editEnigma(id) {
+  const en = enigmas.find(x => x.id === id); if (!en) return;
+  document.getElementById('enigma-modal-title').textContent = 'Modifier l\'énigme';
+  document.getElementById('en-id').value = en.id;
+  document.getElementById('en-title').value = en.title;
+  document.getElementById('en-question').value = en.question_text;
+  document.getElementById('en-image').value = en.question_image_url || '';
+  document.getElementById('en-answers').value = (en.expected_answers || []).join(', ');
+  document.getElementById('en-points').value = en.points;
+  document.getElementById('en-mode').value = en.validation_mode;
+  showModal('modal-enigma');
+}
+async function saveEnigma() {
+  const id = document.getElementById('en-id').value;
+  const answers = document.getElementById('en-answers').value.split(',').map(s => s.trim()).filter(Boolean);
+  const payload = {
+    event_id: currentEvent.id,
+    title: document.getElementById('en-title').value.trim(),
+    question_text: document.getElementById('en-question').value.trim(),
+    question_image_url: document.getElementById('en-image').value.trim() || null,
+    expected_answers: answers,
+    points: parseInt(document.getElementById('en-points').value) || 0,
+    validation_mode: document.getElementById('en-mode').value,
+  };
+  if (!payload.title || !payload.question_text) return toast('Titre et question requis', 'err');
+  if (payload.validation_mode === 'auto' && !answers.length) return toast('Au moins une réponse attendue est requise en mode automatique', 'err');
+  const q = id ? sb.from('tb_enigmas').update(payload).eq('id', id) : sb.from('tb_enigmas').insert([payload]);
+  const { error } = await q;
+  if (error) return toast('Erreur enregistrement', 'err');
+  toast(id ? 'Énigme mise à jour' : 'Énigme créée', 'ok');
+  closeModal('modal-enigma');
+  loadEnigmas();
+}
+async function deleteEnigma(id) {
+  if (!confirm('Supprimer cette énigme ? Les réponses associées seront perdues.')) return;
+  const { error } = await sb.from('tb_enigmas').delete().eq('id', id);
+  if (error) return toast('Erreur suppression', 'err');
+  toast('Énigme supprimée', 'ok');
+  loadEnigmas();
+}
+
+// ── Équipes ──
+
+async function loadTeams() {
+  const { data, error } = await sb.from('tb_teams').select('*').eq('event_id', currentEvent.id).order('number');
+  if (error) return toast('Erreur chargement équipes', 'err');
+  teams = data || [];
+  const tbody = document.getElementById('teams-body');
+  if (!teams.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="text-muted" style="text-align:center;padding:20px;">Aucune équipe pour l\'instant</td></tr>';
+    return;
+  }
+  tbody.innerHTML = teams.map(t => `
+    <tr>
+      <td class="num">${t.number ?? '—'}</td>
+      <td>${escHtml(t.name)}</td>
+      <td class="team-code-cell">${t.access_code}</td>
+      <td class="row-actions">
+        <button class="btn btn-ghost btn-sm" onclick="editTeam('${t.id}')">✎</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteTeam('${t.id}')">🗑</button>
+      </td>
+    </tr>`).join('');
+}
+function openTeamModal() {
+  document.getElementById('team-modal-title').textContent = 'Nouvelle équipe';
+  document.getElementById('tm-id').value = '';
+  document.getElementById('tm-number').value = (teams.length ? Math.max(...teams.map(t => t.number || 0)) + 1 : 1);
+  document.getElementById('tm-name').value = '';
+  document.getElementById('tm-code').value = genCode();
+  showModal('modal-team');
+}
+function editTeam(id) {
+  const t = teams.find(x => x.id === id); if (!t) return;
+  document.getElementById('team-modal-title').textContent = 'Modifier l\'équipe';
+  document.getElementById('tm-id').value = t.id;
+  document.getElementById('tm-number').value = t.number ?? '';
+  document.getElementById('tm-name').value = t.name;
+  document.getElementById('tm-code').value = t.access_code;
+  showModal('modal-team');
+}
+function regenTeamCode() { document.getElementById('tm-code').value = genCode(); }
+async function saveTeam() {
+  const id = document.getElementById('tm-id').value;
+  const payload = {
+    event_id: currentEvent.id,
+    number: parseInt(document.getElementById('tm-number').value) || null,
+    name: document.getElementById('tm-name').value.trim(),
+    access_code: document.getElementById('tm-code').value.trim().toUpperCase(),
+  };
+  if (!payload.name || !payload.access_code) return toast('Nom et code requis', 'err');
+  const q = id ? sb.from('tb_teams').update(payload).eq('id', id) : sb.from('tb_teams').insert([payload]);
+  const { error } = await q;
+  if (error) return toast(error.message.includes('duplicate') ? 'Ce code est déjà utilisé pour cet événement' : 'Erreur enregistrement', 'err');
+  toast(id ? 'Équipe mise à jour' : 'Équipe créée', 'ok');
+  closeModal('modal-team');
+  loadTeams();
+}
+async function deleteTeam(id) {
+  if (!confirm('Supprimer cette équipe ?')) return;
+  const { error } = await sb.from('tb_teams').delete().eq('id', id);
+  if (error) return toast('Erreur suppression', 'err');
+  toast('Équipe supprimée', 'ok');
+  loadTeams();
+}
+
+// ── Suivi & jury (temps réel) ──
+
+async function startEventNow() {
+  if (!confirm('Démarrer l\'événement ? Les équipes pourront soumettre leurs réponses.')) return;
+  const { error } = await sb.rpc('tb_start_event', { p_event_id: currentEvent.id });
+  if (error) return toast('Erreur : ' + error.message, 'err');
+  currentEvent.status = 'en_cours';
+  currentEvent.started_at = new Date().toISOString();
+  renderDetailHeader();
+  toast('Événement démarré', 'ok');
+}
+async function finishEventNow() {
+  if (!confirm('Terminer l\'événement ? Le classement deviendra visible sur le site public.')) return;
+  const { error } = await sb.rpc('tb_finish_event', { p_event_id: currentEvent.id });
+  if (error) return toast('Erreur : ' + error.message, 'err');
+  currentEvent.status = 'termine';
+  renderDetailHeader();
+  toast('Événement terminé', 'ok');
+}
+
+async function loadSubmissions() {
+  const { data, error } = await sb.from('tb_submissions')
+    .select('*, tb_teams(name,number), tb_enigmas(title,unique_code)')
+    .eq('event_id', currentEvent.id)
+    .order('submitted_at', { ascending: false })
+    .limit(200);
+  if (error) return toast('Erreur chargement réponses', 'err');
+  renderSubmissions(data || []);
+}
+function renderSubmissions(rows) {
+  const tbody = document.getElementById('submissions-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-muted" style="text-align:center;padding:20px;">Aucune réponse pour l\'instant</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(s => {
+    const statusHtml = s.status === 'validee' ? '<span class="badge badge-green">Validée</span>'
+      : s.status === 'refusee' ? '<span class="badge badge-red">Refusée</span>'
+      : '<span class="badge badge-yellow">En attente</span>';
+    const actions = s.status === 'en_attente'
+      ? `<button class="btn btn-success btn-sm" onclick="overrideSubmission('${s.id}','validee',${s.tb_enigmas?.points ?? 0})">✓ Valider</button>
+         <button class="btn btn-danger btn-sm" onclick="overrideSubmission('${s.id}','refusee',0)">✗ Refuser</button>`
+      : `<button class="btn btn-ghost btn-sm" onclick="overrideSubmission('${s.id}', '${s.status === 'validee' ? 'refusee' : 'validee'}', ${s.status === 'validee' ? 0 : (s.points_awarded || 10)})">↩ Inverser</button>`;
+    return `<tr>
+      <td style="white-space:nowrap;">${new Date(s.submitted_at).toLocaleTimeString('fr-FR')}</td>
+      <td>${escHtml(s.tb_teams?.name || '—')}${s.tb_teams?.number ? ' (#' + s.tb_teams.number + ')' : ''}</td>
+      <td>${escHtml(s.tb_enigmas?.title || '—')}</td>
+      <td>${escHtml(s.answer_given || '')}</td>
+      <td>${s.auto_correct === true ? '✅' : s.auto_correct === false ? '❌' : '—'}</td>
+      <td>${statusHtml}</td>
+      <td class="num">${s.points_awarded}</td>
+      <td class="row-actions">${actions}</td>
+    </tr>`;
+  }).join('');
+}
+async function overrideSubmission(id, status, points) {
+  const { error } = await sb.rpc('tb_staff_override_submission', { p_submission_id: id, p_status: status, p_points: points });
+  if (error) return toast('Erreur : ' + error.message, 'err');
+  toast('Réponse mise à jour', 'ok');
+  loadSubmissions();
+}
+function startLiveUpdates() {
+  stopLiveUpdates();
+  try {
+    liveChannel = sb.channel('tb-submissions-' + currentEvent.id)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tb_submissions', filter: 'event_id=eq.' + currentEvent.id }, loadSubmissions)
+      .subscribe();
+  } catch (e) {}
+  liveTimer = setInterval(loadSubmissions, 8000); // secours si le temps réel est indisponible
+}
+function stopLiveUpdates() {
+  if (liveChannel) { sb.removeChannel(liveChannel); liveChannel = null; }
+  if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+}
+
+// ── Classement ──
+
+async function loadRanking() {
+  const { data, error } = await sb.rpc('tb_get_leaderboard', { p_event_id: currentEvent.id });
+  if (error) return toast('Erreur chargement classement', 'err');
+  document.getElementById('ranking-note').textContent =
+    currentEvent.status === 'brouillon' ? '(visible une fois l\'événement démarré)' : '';
+  const tbody = document.getElementById('ranking-body');
+  if (!data || !data.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="text-muted" style="text-align:center;padding:20px;">Pas encore de score</td></tr>';
+    return;
+  }
+  tbody.innerHTML = data.map((r, i) => `
+    <tr>
+      <td class="num">${i + 1}</td>
+      <td>${escHtml(r.team_name)}${r.team_number ? ' (#' + r.team_number + ')' : ''}</td>
+      <td class="num" style="font-weight:700;">${r.total_points}</td>
+      <td>${r.last_validated_at ? new Date(r.last_validated_at).toLocaleTimeString('fr-FR') : '—'}</td>
+    </tr>`).join('');
+}
+
+// ── QR codes ──
+
+let qrCurrentCode = '', qrCurrentTitle = '';
+function showQr(code, title) {
+  qrCurrentCode = code; qrCurrentTitle = title;
+  document.getElementById('qr-modal-title').textContent = title;
+  document.getElementById('qr-code-text').textContent = code;
+  const box = document.getElementById('qr-canvas'); box.innerHTML = '';
+  new QRCode(box, { text: qrPayload(code), width: 200, height: 200, colorDark: '#0a0d14', colorLight: '#ffffff' });
+  showModal('modal-qr');
+}
+function qrPayload(code) {
+  // Format attendu par l'interface participant (étape 2) : event + code énigme scannés.
+  return `https://enigma.ci/teambuilding.html?event=${currentEvent.id}&enigma=${code}`;
+}
+function printQr() {
+  document.getElementById('print-title').textContent = qrCurrentTitle;
+  document.getElementById('print-code').textContent = qrCurrentCode;
+  const box = document.getElementById('qr-canvas-print'); box.innerHTML = '';
+  new QRCode(box, { text: qrPayload(qrCurrentCode), width: 260, height: 260, colorDark: '#000000', colorLight: '#ffffff' });
+  setTimeout(() => window.print(), 150);
+}
+
+// ── Modales génériques ──
+function showModal(id) { document.getElementById(id).classList.remove('hidden'); }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+document.querySelectorAll('.modal-overlay').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.add('hidden'); }));
+</script>
+</body>
+</html>
