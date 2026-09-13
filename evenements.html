@@ -243,6 +243,31 @@
   <div id="print-code" style="font-family:monospace;font-size:22px;letter-spacing:.1em;"></div>
 </div>
 
+<div class="modal-overlay hidden" id="modal-kitpdf">
+  <div class="modal-box">
+    <div class="modal-title">PDF du kit d'impression</div>
+    <div class="field">
+      <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:13px;color:var(--text);">
+        <input type="checkbox" id="kit-inc-enigmas" checked style="width:auto;"> Énigmes (QR + code, une carte par énigme)
+      </label>
+    </div>
+    <div class="field">
+      <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:13px;color:var(--text);">
+        <input type="checkbox" id="kit-inc-teams" checked style="width:auto;"> Équipes (QR de jonction automatique + code, une carte par équipe)
+      </label>
+    </div>
+    <div class="notice">6 cartes par page, découpables aux pointillés. Le PDF est généré directement dans votre navigateur.</div>
+    <div style="display:flex;gap:10px;margin-top:8px;">
+      <button class="btn btn-ghost btn-full" onclick="closeModal('modal-kitpdf')">Annuler</button>
+      <button class="btn btn-primary btn-full" onclick="generateKitPdf()">Générer le PDF</button>
+    </div>
+  </div>
+</div>
+
+<!-- Buffer hors-écran pour générer les QR avant de les insérer dans le PDF -->
+<div id="qr-render-buffer" style="position:fixed;left:-9999px;top:0;"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="shared/config.js"></script>
@@ -401,6 +426,7 @@ function renderDetailHeader() {
     ? `<button class="btn btn-ghost btn-sm" onclick="resetEventStatus()">↩ Repasser en brouillon</button>` : '';
   controls.innerHTML = `
     <button class="btn btn-brass btn-sm" onclick="showEventQr()">🔗 QR d'accès équipe</button>
+    <button class="btn btn-cyan btn-sm" onclick="openKitPdfModal()">🖨 PDF du kit</button>
     ${resetBtn}`;
 }
 
@@ -692,6 +718,93 @@ function printQr() {
   const box = document.getElementById('qr-canvas-print'); box.innerHTML = '';
   new QRCode(box, { text: qrCurrentPayload, width: 260, height: 260, colorDark: '#000000', colorLight: '#ffffff' });
   setTimeout(() => window.print(), 150);
+}
+
+// ── PDF du kit d'impression (QR en lot) ──
+
+function openKitPdfModal() { showModal('modal-kitpdf'); }
+
+function renderQrDataUrl(text, size) {
+  const buf = document.getElementById('qr-render-buffer');
+  buf.innerHTML = '';
+  new QRCode(buf, { text, width: size, height: size, colorDark: '#000000', colorLight: '#ffffff' });
+  const canvas = buf.querySelector('canvas');
+  return canvas ? canvas.toDataURL('image/png') : buf.querySelector('img').src;
+}
+
+function slugify(s) {
+  return (s || 'evenement').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'evenement';
+}
+
+function drawKitPageHeader(doc) {
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(0);
+  doc.text('ENIGMA - ' + currentEvent.name, 10, 12);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(130);
+  doc.text('Kit d\'impression - decoupez le long des bordures', 10, 16);
+  doc.setTextColor(0);
+}
+
+function drawKitCard(doc, item, x, y, w, h) {
+  doc.setDrawColor(190);
+  doc.rect(x, y, w, h);
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(140);
+  doc.text(item.kind, x + w / 2, y + 6, { align: 'center' });
+  doc.setTextColor(0);
+
+  const qrSize = Math.min(w, h) * 0.5;
+  const qrX = x + (w - qrSize) / 2;
+  const qrY = y + 9;
+  const dataUrl = renderQrDataUrl(item.payload, 240);
+  doc.addImage(dataUrl, 'PNG', qrX, qrY, qrSize, qrSize);
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+  const titleLines = doc.splitTextToSize(item.label, w - 6).slice(0, 2);
+  doc.text(titleLines, x + w / 2, qrY + qrSize + 6, { align: 'center' });
+
+  doc.setFont('courier', 'normal'); doc.setFontSize(11);
+  doc.text(item.code, x + w / 2, y + h - 6, { align: 'center' });
+}
+
+function generateKitPdf() {
+  const includeEnigmas = document.getElementById('kit-inc-enigmas').checked;
+  const includeTeams = document.getElementById('kit-inc-teams').checked;
+  if (!includeEnigmas && !includeTeams) return toast('Choisissez au moins une catégorie', 'err');
+  if (includeEnigmas && !enigmas.length) return toast('Aucune énigme pour cet événement', 'err');
+  if (includeTeams && !teams.length) return toast('Aucune équipe pour cet événement', 'err');
+
+  let items = [];
+  if (includeEnigmas) items = items.concat(enigmas.map(en => ({
+    kind: 'ENIGME', label: en.title, code: en.unique_code,
+    payload: `https://enigma.ci/teambuilding.html?event=${currentEvent.id}&enigma=${en.unique_code}`,
+  })));
+  if (includeTeams) items = items.concat(teams.map(t => ({
+    kind: 'EQUIPE', label: t.name + (t.number ? ' (No ' + t.number + ')' : ''), code: t.access_code,
+    payload: `https://enigma.ci/teambuilding.html?event=${currentEvent.id}&team=${t.access_code}`,
+  })));
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const marginX = 10, marginTop = 18, marginBottom = 10, pageW = 210, pageH = 297;
+  const cols = 2, rows = 3, gutterX = 6, gutterY = 6;
+  const cardW = (pageW - marginX * 2 - gutterX * (cols - 1)) / cols;
+  const cardH = (pageH - marginTop - marginBottom - gutterY * (rows - 1)) / rows;
+  const perPage = cols * rows;
+
+  items.forEach((item, idx) => {
+    const pos = idx % perPage;
+    if (idx > 0 && pos === 0) doc.addPage();
+    if (pos === 0) drawKitPageHeader(doc);
+    const col = pos % cols, row = Math.floor(pos / cols);
+    const x = marginX + col * (cardW + gutterX);
+    const y = marginTop + row * (cardH + gutterY);
+    drawKitCard(doc, item, x, y, cardW, cardH);
+  });
+
+  doc.save('kit-' + slugify(currentEvent.name) + '.pdf');
+  closeModal('modal-kitpdf');
+  toast('PDF généré', 'ok');
 }
 
 // ── Modales génériques ──
