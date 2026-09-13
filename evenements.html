@@ -108,6 +108,7 @@
           <div style="display:flex;gap:8px;">
             <button class="btn btn-success btn-sm" id="btn-start" onclick="startEventNow()">▶ Démarrer</button>
             <button class="btn btn-danger btn-sm" id="btn-finish" onclick="finishEventNow()">■ Terminer</button>
+            <button class="btn btn-ghost btn-sm" id="btn-clear-subs" onclick="clearEventSubmissions()">🗑 Réinitialiser les réponses</button>
           </div>
         </div>
       </div>
@@ -392,6 +393,42 @@ function renderDetailHeader() {
     'Événement terminé — classement visible sur le site public.';
   document.getElementById('btn-start').disabled = currentEvent.status !== 'brouillon';
   document.getElementById('btn-finish').disabled = currentEvent.status !== 'en_cours';
+
+  document.getElementById('btn-clear-subs').classList.toggle('hidden', !isAdmin());
+
+  const controls = document.getElementById('detail-controls');
+  const resetBtn = currentEvent.status !== 'brouillon'
+    ? `<button class="btn btn-ghost btn-sm" onclick="resetEventStatus()">↩ Repasser en brouillon</button>` : '';
+  controls.innerHTML = `
+    <button class="btn btn-brass btn-sm" onclick="showEventQr()">🔗 QR d'accès équipe</button>
+    ${resetBtn}`;
+}
+
+async function resetEventStatus() {
+  if (!confirm('Repasser cet événement en brouillon ? Les équipes ne pourront plus soumettre de réponses tant qu\'il ne sera pas redémarré. Les réponses déjà enregistrées sont conservées.')) return;
+  const { error } = await sb.rpc('tb_reset_event_status', { p_event_id: currentEvent.id });
+  if (error) return toast('Erreur : ' + error.message, 'err');
+  currentEvent.status = 'brouillon'; currentEvent.started_at = null; currentEvent.finished_at = null;
+  renderDetailHeader();
+  toast('Événement repassé en brouillon', 'ok');
+}
+
+async function clearEventSubmissions() {
+  if (!isAdmin()) return toast('Réservé aux administrateurs', 'err');
+  if (!confirm('⚠️ Ceci supprime DÉFINITIVEMENT toutes les réponses et remet le classement à zéro pour cet événement. Continuer ?')) return;
+  if (!confirm('Confirmez une seconde fois : toutes les réponses seront perdues.')) return;
+  const { error } = await sb.rpc('tb_clear_event_submissions', { p_event_id: currentEvent.id });
+  if (error) return toast('Erreur : ' + error.message, 'err');
+  toast('Réponses et classement réinitialisés', 'ok');
+  loadSubmissions(); loadRanking();
+}
+
+function showEventQr() {
+  showQr(`https://enigma.ci/teambuilding.html?event=${currentEvent.id}`, currentEvent.name, 'Accès équipe (code à saisir)');
+}
+function showTeamQr(teamId) {
+  const t = teams.find(x => x.id === teamId); if (!t) return;
+  showQr(`https://enigma.ci/teambuilding.html?event=${currentEvent.id}&team=${t.access_code}`, t.name, t.access_code + ' (jonction automatique)');
 }
 
 function switchTab(name) {
@@ -420,7 +457,7 @@ async function loadEnigmas() {
       <td class="num">${en.points}</td>
       <td>${en.validation_mode === 'auto' ? '⚙️ Auto' : '👤 Manuelle'}</td>
       <td class="row-actions">
-        <button class="btn btn-ghost btn-sm" onclick="showQr('${en.unique_code}','${escHtml(en.title)}')">QR</button>
+        <button class="btn btn-ghost btn-sm" onclick="showEnigmaQr('${en.unique_code}','${escHtml(en.title)}')">QR</button>
         <button class="btn btn-ghost btn-sm" onclick="editEnigma('${en.id}')">✎</button>
         <button class="btn btn-danger btn-sm" onclick="deleteEnigma('${en.id}')">🗑</button>
       </td>
@@ -491,6 +528,7 @@ async function loadTeams() {
       <td>${escHtml(t.name)}</td>
       <td class="team-code-cell">${t.access_code}</td>
       <td class="row-actions">
+        <button class="btn btn-ghost btn-sm" onclick="showTeamQr('${t.id}')">QR</button>
         <button class="btn btn-ghost btn-sm" onclick="editTeam('${t.id}')">✎</button>
         <button class="btn btn-danger btn-sm" onclick="deleteTeam('${t.id}')">🗑</button>
       </td>
@@ -636,24 +674,23 @@ async function loadRanking() {
 
 // ── QR codes ──
 
-let qrCurrentCode = '', qrCurrentTitle = '';
-function showQr(code, title) {
-  qrCurrentCode = code; qrCurrentTitle = title;
+let qrCurrentPayload = '', qrCurrentTitle = '', qrCurrentCodeLabel = '';
+function showQr(payload, title, codeLabel) {
+  qrCurrentPayload = payload; qrCurrentTitle = title; qrCurrentCodeLabel = codeLabel || '';
   document.getElementById('qr-modal-title').textContent = title;
-  document.getElementById('qr-code-text').textContent = code;
+  document.getElementById('qr-code-text').textContent = qrCurrentCodeLabel;
   const box = document.getElementById('qr-canvas'); box.innerHTML = '';
-  new QRCode(box, { text: qrPayload(code), width: 200, height: 200, colorDark: '#0a0d14', colorLight: '#ffffff' });
+  new QRCode(box, { text: payload, width: 200, height: 200, colorDark: '#0a0d14', colorLight: '#ffffff' });
   showModal('modal-qr');
 }
-function qrPayload(code) {
-  // Format attendu par l'interface participant (étape 2) : event + code énigme scannés.
-  return `https://enigma.ci/teambuilding.html?event=${currentEvent.id}&enigma=${code}`;
+function showEnigmaQr(code, title) {
+  showQr(`https://enigma.ci/teambuilding.html?event=${currentEvent.id}&enigma=${code}`, title, code);
 }
 function printQr() {
   document.getElementById('print-title').textContent = qrCurrentTitle;
-  document.getElementById('print-code').textContent = qrCurrentCode;
+  document.getElementById('print-code').textContent = qrCurrentCodeLabel;
   const box = document.getElementById('qr-canvas-print'); box.innerHTML = '';
-  new QRCode(box, { text: qrPayload(qrCurrentCode), width: 260, height: 260, colorDark: '#000000', colorLight: '#ffffff' });
+  new QRCode(box, { text: qrCurrentPayload, width: 260, height: 260, colorDark: '#000000', colorLight: '#ffffff' });
   setTimeout(() => window.print(), 150);
 }
 
