@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- build: site-admin-evenementiel-tab-v1 -->
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
@@ -61,6 +62,7 @@
     <div class="tab" data-tab="faq">Questions fréquentes</div>
     <div class="tab" data-tab="testi">Témoignages</div>
     <div class="tab" data-tab="settings">Textes &amp; contact</div>
+    <div class="tab" data-tab="evenementiel">Événementiel</div>
   </div>
 
   <!-- SALLES -->
@@ -258,6 +260,61 @@
       </div>
     </div>
   </div>
+
+  <!-- ÉVÉNEMENTIEL -->
+  <div id="tab-evenementiel" class="tab-panel">
+    <p class="text-muted" style="font-size:12px;margin-bottom:14px;">Contenu de la page publique "Événementiel" (evenementiel.html) — texte d'introduction et catégories cliquables avec leur article.</p>
+
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-title">Texte d'introduction</div>
+      <div class="field"><textarea id="ev-hero-text" rows="4"></textarea></div>
+      <button class="btn btn-primary btn-sm" onclick="saveEvHero()">Enregistrer le texte</button>
+    </div>
+
+    <div class="flex-between" style="margin-bottom:10px;">
+      <div class="card-title" style="margin:0;">Catégories &amp; articles</div>
+      <button class="btn btn-ghost btn-sm" onclick="newEvCategory()">+ Nouvelle catégorie</button>
+    </div>
+    <div class="room-pick" id="ev-cat-pick"></div>
+
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title" id="ev-cat-form-title">Nouvelle catégorie</div>
+        <input type="hidden" id="ev-cat-id">
+        <div class="field-row">
+          <div class="field" style="max-width:90px;"><label>Icône</label><input id="ev-cat-icon" maxlength="4" placeholder="🏢"></div>
+          <div class="field"><label>Titre de la carte</label><input id="ev-cat-title" placeholder="Ex. Entreprises"></div>
+        </div>
+        <div class="field"><label>Texte court (carte cliquable)</label><textarea id="ev-cat-cardtext" rows="2"></textarea></div>
+        <div class="field-row">
+          <div class="field"><label>Ordre d'affichage</label><input id="ev-cat-order" type="number" value="0"></div>
+          <div class="field"><label>Visible sur le site</label><select id="ev-cat-active"><option value="true">Oui</option><option value="false">Non (masquée)</option></select></div>
+        </div>
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-primary btn-full" onclick="saveEvCategory()">Enregistrer</button>
+          <button class="btn btn-danger" id="ev-cat-delete" onclick="deleteEvCategory()">🗑</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Article associé</div>
+        <div class="field"><label>Titre de l'article</label><input id="ev-cat-articletitle" placeholder="Affiché au-dessus de l'article"></div>
+        <div class="field"><label>Texte (un paragraphe par ligne vide)</label><textarea id="ev-cat-articlebody" rows="6"></textarea></div>
+        <div class="field">
+          <label>Image (URL directe ou lien Google Drive)</label>
+          <input id="ev-cat-image" placeholder="https://… ou lien de partage Google Drive">
+          <p class="text-muted" style="font-size:11px;margin-top:4px;">Le fichier Drive doit être partagé en "Tous les utilisateurs disposant du lien".</p>
+        </div>
+        <div class="field"><label>Position de l'image</label>
+          <select id="ev-cat-imagepos">
+            <option value="top">Au-dessus du texte</option>
+            <option value="left">À gauche</option>
+            <option value="right">À droite</option>
+            <option value="none">Pas d'image</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -285,6 +342,7 @@ window.addEventListener('load', async () => {
   ['dragleave','drop'].forEach(ev => hdrop.addEventListener(ev, e => { e.preventDefault(); hdrop.classList.remove('over'); }));
   hdrop.addEventListener('drop', e => uploadHome(e.dataTransfer.files));
   await loadRooms(); loadFaq(); loadTesti(); loadSettings(); loadHome(); loadVideos();
+  loadEvHero(); loadEvCategories();
 });
 
 // ── Salles ────────────────────────────────────────────────
@@ -683,6 +741,106 @@ async function togVideo(id, cur) { await sb.from('site_videos').update({ is_publ
 async function delVideo(id) { if (!confirm('Supprimer cette vidéo ?')) return; await sb.from('site_videos').delete().eq('id', id); loadVideos(); }
 
 function escHtml(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+// ── Événementiel ──
+let evCategories = [], evHeroId = null;
+
+function normalizeDriveImageUrl(url) {
+  if (!url) return url;
+  const m = url.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/);
+  if (m) return `https://lh3.googleusercontent.com/d/${m[1]}`;
+  return url;
+}
+
+async function loadEvHero() {
+  const { data, error } = await sb.from('tb_site_content').select('*').eq('key', 'evenementiel').maybeSingle();
+  if (error) return toast('Erreur chargement texte Événementiel', 'err');
+  if (data) { document.getElementById('ev-hero-text').value = data.hero_text || ''; evHeroId = data.id; }
+}
+async function saveEvHero() {
+  const text = document.getElementById('ev-hero-text').value.trim();
+  const q = evHeroId
+    ? sb.from('tb_site_content').update({ hero_text: text, updated_at: new Date().toISOString() }).eq('id', evHeroId)
+    : sb.from('tb_site_content').insert([{ key: 'evenementiel', hero_text: text }]);
+  const { error } = await q;
+  if (error) return toast('Erreur enregistrement', 'err');
+  toast('Texte enregistré', 'ok');
+  loadEvHero();
+}
+
+async function loadEvCategories() {
+  const { data, error } = await sb.from('tb_site_categories').select('*').order('order_index');
+  if (error) return toast('Erreur chargement catégories', 'err');
+  evCategories = data || [];
+  document.getElementById('ev-cat-pick').innerHTML = evCategories.map(c => `
+    <button data-id="${c.id}" onclick="pickEvCategory('${c.id}')">${escHtml(c.icon || '')} ${escHtml(c.title)}${c.active ? '' : ' (masquée)'}</button>
+  `).join('') || '<span class="text-muted" style="font-size:12px;">Aucune catégorie pour l\'instant</span>';
+  document.querySelectorAll('#ev-cat-pick button').forEach(b => {
+    if (b.dataset.id === document.getElementById('ev-cat-id').value) b.classList.add('active');
+  });
+  if (evCategories.length && !document.getElementById('ev-cat-id').value) pickEvCategory(evCategories[0].id);
+}
+function pickEvCategory(id) {
+  const c = evCategories.find(x => x.id === id); if (!c) return;
+  document.querySelectorAll('#ev-cat-pick button').forEach(b => b.classList.toggle('active', b.dataset.id === id));
+  document.getElementById('ev-cat-form-title').textContent = 'Modifier la catégorie';
+  document.getElementById('ev-cat-id').value = c.id;
+  document.getElementById('ev-cat-icon').value = c.icon || '';
+  document.getElementById('ev-cat-title').value = c.title;
+  document.getElementById('ev-cat-cardtext').value = c.card_text || '';
+  document.getElementById('ev-cat-order').value = c.order_index;
+  document.getElementById('ev-cat-active').value = String(c.active);
+  document.getElementById('ev-cat-articletitle').value = c.article_title || '';
+  document.getElementById('ev-cat-articlebody').value = c.article_body || '';
+  document.getElementById('ev-cat-image').value = c.image_url || '';
+  document.getElementById('ev-cat-imagepos').value = c.image_position || 'top';
+  document.getElementById('ev-cat-delete').classList.remove('hidden');
+}
+function newEvCategory() {
+  document.querySelectorAll('#ev-cat-pick button').forEach(b => b.classList.remove('active'));
+  document.getElementById('ev-cat-form-title').textContent = 'Nouvelle catégorie';
+  document.getElementById('ev-cat-id').value = '';
+  document.getElementById('ev-cat-icon').value = '';
+  document.getElementById('ev-cat-title').value = '';
+  document.getElementById('ev-cat-cardtext').value = '';
+  document.getElementById('ev-cat-order').value = evCategories.length;
+  document.getElementById('ev-cat-active').value = 'true';
+  document.getElementById('ev-cat-articletitle').value = '';
+  document.getElementById('ev-cat-articlebody').value = '';
+  document.getElementById('ev-cat-image').value = '';
+  document.getElementById('ev-cat-imagepos').value = 'top';
+  document.getElementById('ev-cat-delete').classList.add('hidden');
+}
+async function saveEvCategory() {
+  const id = document.getElementById('ev-cat-id').value;
+  const payload = {
+    icon: document.getElementById('ev-cat-icon').value.trim() || null,
+    title: document.getElementById('ev-cat-title').value.trim(),
+    card_text: document.getElementById('ev-cat-cardtext').value.trim() || null,
+    order_index: parseInt(document.getElementById('ev-cat-order').value) || 0,
+    active: document.getElementById('ev-cat-active').value === 'true',
+    article_title: document.getElementById('ev-cat-articletitle').value.trim() || null,
+    article_body: document.getElementById('ev-cat-articlebody').value.trim() || null,
+    image_url: normalizeDriveImageUrl(document.getElementById('ev-cat-image').value.trim()) || null,
+    image_position: document.getElementById('ev-cat-imagepos').value,
+  };
+  if (!payload.title) return toast('Le titre est requis', 'err');
+  const q = id ? sb.from('tb_site_categories').update(payload).eq('id', id) : sb.from('tb_site_categories').insert([payload]);
+  const { error } = await q;
+  if (error) return toast('Erreur enregistrement', 'err');
+  toast(id ? 'Catégorie mise à jour' : 'Catégorie créée', 'ok');
+  loadEvCategories();
+}
+async function deleteEvCategory() {
+  const id = document.getElementById('ev-cat-id').value;
+  if (!id) return;
+  if (!confirm('Supprimer cette catégorie et son article ?')) return;
+  const { error } = await sb.from('tb_site_categories').delete().eq('id', id);
+  if (error) return toast('Erreur suppression', 'err');
+  toast('Catégorie supprimée', 'ok');
+  newEvCategory();
+  loadEvCategories();
+}
 </script>
 </body>
 </html>
