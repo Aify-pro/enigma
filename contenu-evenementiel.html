@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contenu du site — Enigma</title>
+<link rel="stylesheet" href="shared/style.css">
+<style>
+  .cat-item{ display:flex; align-items:center; gap:12px; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:8px; }
+  .cat-item .ico{ font-size:20px; width:28px; text-align:center; }
+  .cat-item .title{ flex:1; font-weight:600; }
+  .cat-item .muted{ color:var(--text-muted,#8d99ad); font-size:12px; }
+  .drive-hint{ font-size:11.5px; color:var(--text-muted,#8d99ad); margin-top:4px; }
+</style>
+</head>
+<body>
+<nav class="navbar"><!-- généré par shared/auth.js --></nav>
+<div id="toast-container"></div>
+
+<div class="page">
+  <div class="page-title" style="margin-bottom:20px;">📝 Contenu du site — Événementiel</div>
+
+  <div class="card" style="margin-bottom:20px;">
+    <div class="card-title">Texte d'introduction</div>
+    <p class="text-muted" style="font-size:12px;margin-bottom:10px;">Affiché juste sous le titre "Événementiel" sur la page publique.</p>
+    <div class="field"><textarea id="hero-text" rows="4"></textarea></div>
+    <button class="btn btn-primary btn-sm" onclick="saveHero()">Enregistrer le texte</button>
+  </div>
+
+  <div class="flex-between" style="margin-bottom:12px;">
+    <div class="card-title" style="margin:0;">Catégories &amp; articles</div>
+    <button class="btn btn-primary btn-sm" onclick="openCatModal()">+ Nouvelle catégorie</button>
+  </div>
+  <div class="card">
+    <div id="cat-list"><p class="text-muted" style="text-align:center;padding:20px;">Chargement…</p></div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="modal-cat">
+  <div class="modal-box" style="width:600px;">
+    <div class="modal-title" id="cat-modal-title">Nouvelle catégorie</div>
+    <input type="hidden" id="cat-id">
+    <div class="field-row">
+      <div class="field" style="max-width:100px;"><label>Icône</label><input type="text" id="cat-icon" placeholder="🏢" maxlength="4"></div>
+      <div class="field"><label>Titre de la carte *</label><input type="text" id="cat-title" placeholder="Ex. Entreprises"></div>
+    </div>
+    <div class="field"><label>Texte court (carte)</label><textarea id="cat-cardtext" rows="2" placeholder="Une phrase affichée sur la carte cliquable"></textarea></div>
+
+    <div class="notice">En cliquant sur la carte, le visiteur descend directement à l'article ci-dessous.</div>
+
+    <div class="field"><label>Titre de l'article</label><input type="text" id="cat-articletitle" placeholder="Titre affiché au-dessus de l'article"></div>
+    <div class="field"><label>Texte de l'article</label><textarea id="cat-articlebody" rows="6" placeholder="Un paragraphe par ligne vide"></textarea></div>
+    <div class="field">
+      <label>Image de l'article (URL directe ou lien Google Drive)</label>
+      <input type="text" id="cat-image" placeholder="https://… ou lien de partage Google Drive">
+      <div class="drive-hint">Le fichier Google Drive doit être partagé en "Tous les utilisateurs disposant du lien".</div>
+    </div>
+    <div class="field"><label>Position de l'image</label>
+      <select id="cat-imagepos">
+        <option value="top">Au-dessus du texte</option>
+        <option value="left">À gauche du texte</option>
+        <option value="right">À droite du texte</option>
+        <option value="none">Pas d'image</option>
+      </select>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Ordre d'affichage</label><input type="number" id="cat-order" value="0"></div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:13px;color:var(--text);margin-top:22px;">
+          <input type="checkbox" id="cat-active" checked style="width:auto;"> Visible sur le site
+        </label>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px;">
+      <button class="btn btn-ghost btn-full" onclick="closeModal('modal-cat')">Annuler</button>
+      <button class="btn btn-primary btn-full" onclick="saveCat()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="shared/config.js"></script>
+<script src="shared/auth.js"></script>
+<script>
+let categories = [];
+let heroVersionId = null;
+
+window.addEventListener('load', async () => {
+  try { await requireAuth(); } catch (e) { return; }
+  loadHero();
+  loadCategories();
+});
+
+function normalizeDriveImageUrl(url) {
+  if (!url) return url;
+  const m = url.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/);
+  if (m) return `https://lh3.googleusercontent.com/d/${m[1]}`;
+  return url;
+}
+
+async function loadHero() {
+  const { data, error } = await sb.from('tb_site_content').select('*').eq('key', 'evenementiel').maybeSingle();
+  if (error) return toast('Erreur chargement du texte', 'err');
+  if (data) { document.getElementById('hero-text').value = data.hero_text || ''; heroVersionId = data.id; }
+}
+async function saveHero() {
+  const text = document.getElementById('hero-text').value.trim();
+  const q = heroVersionId
+    ? sb.from('tb_site_content').update({ hero_text: text, updated_at: new Date().toISOString() }).eq('id', heroVersionId)
+    : sb.from('tb_site_content').insert([{ key: 'evenementiel', hero_text: text }]);
+  const { error } = await q;
+  if (error) return toast('Erreur enregistrement', 'err');
+  toast('Texte enregistré', 'ok');
+  loadHero();
+}
+
+async function loadCategories() {
+  const { data, error } = await sb.from('tb_site_categories').select('*').order('order_index');
+  if (error) return toast('Erreur chargement catégories', 'err');
+  categories = data || [];
+  const box = document.getElementById('cat-list');
+  if (!categories.length) {
+    box.innerHTML = '<p class="text-muted" style="text-align:center;padding:20px;">Aucune catégorie — créez la première</p>';
+    return;
+  }
+  box.innerHTML = categories.map(c => `
+    <div class="cat-item">
+      <span class="ico">${c.icon || '•'}</span>
+      <div style="flex:1;">
+        <div class="title">${escHtml(c.title)} ${c.active ? '' : '<span class="badge badge-muted">Masquée</span>'}</div>
+        <div class="muted">Ordre ${c.order_index} · ${c.image_position === 'none' ? 'sans image' : 'image ' + c.image_position}</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="editCat('${c.id}')">✎</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteCat('${c.id}')">🗑</button>
+    </div>`).join('');
+}
+
+function openCatModal() {
+  document.getElementById('cat-modal-title').textContent = 'Nouvelle catégorie';
+  ['cat-id','cat-icon','cat-title','cat-cardtext','cat-articletitle','cat-articlebody','cat-image'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('cat-imagepos').value = 'top';
+  document.getElementById('cat-order').value = categories.length;
+  document.getElementById('cat-active').checked = true;
+  showModal('modal-cat');
+}
+function editCat(id) {
+  const c = categories.find(x => x.id === id); if (!c) return;
+  document.getElementById('cat-modal-title').textContent = 'Modifier la catégorie';
+  document.getElementById('cat-id').value = c.id;
+  document.getElementById('cat-icon').value = c.icon || '';
+  document.getElementById('cat-title').value = c.title;
+  document.getElementById('cat-cardtext').value = c.card_text || '';
+  document.getElementById('cat-articletitle').value = c.article_title || '';
+  document.getElementById('cat-articlebody').value = c.article_body || '';
+  document.getElementById('cat-image').value = c.image_url || '';
+  document.getElementById('cat-imagepos').value = c.image_position || 'top';
+  document.getElementById('cat-order').value = c.order_index;
+  document.getElementById('cat-active').checked = c.active;
+  showModal('modal-cat');
+}
+async function saveCat() {
+  const id = document.getElementById('cat-id').value;
+  const payload = {
+    icon: document.getElementById('cat-icon').value.trim() || null,
+    title: document.getElementById('cat-title').value.trim(),
+    card_text: document.getElementById('cat-cardtext').value.trim() || null,
+    article_title: document.getElementById('cat-articletitle').value.trim() || null,
+    article_body: document.getElementById('cat-articlebody').value.trim() || null,
+    image_url: normalizeDriveImageUrl(document.getElementById('cat-image').value.trim()) || null,
+    image_position: document.getElementById('cat-imagepos').value,
+    order_index: parseInt(document.getElementById('cat-order').value) || 0,
+    active: document.getElementById('cat-active').checked,
+  };
+  if (!payload.title) return toast('Le titre est requis', 'err');
+  const q = id ? sb.from('tb_site_categories').update(payload).eq('id', id) : sb.from('tb_site_categories').insert([payload]);
+  const { error } = await q;
+  if (error) return toast('Erreur enregistrement', 'err');
+  toast(id ? 'Catégorie mise à jour' : 'Catégorie créée', 'ok');
+  closeModal('modal-cat');
+  loadCategories();
+}
+async function deleteCat(id) {
+  if (!confirm('Supprimer cette catégorie et son article ?')) return;
+  const { error } = await sb.from('tb_site_categories').delete().eq('id', id);
+  if (error) return toast('Erreur suppression', 'err');
+  toast('Catégorie supprimée', 'ok');
+  loadCategories();
+}
+
+function showModal(id) { document.getElementById(id).classList.remove('hidden'); }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+document.querySelectorAll('.modal-overlay').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.add('hidden'); }));
+</script>
+</body>
+</html>

@@ -154,6 +154,13 @@
       <div class="field"><label>Client</label><input type="text" id="ev-client" placeholder="Nom du client"></div>
       <div class="field"><label>Taille d'équipe</label><input type="number" id="ev-teamsize" min="1" placeholder="4"></div>
     </div>
+    <div class="field"><label>Thème visuel (page participant)</label><select id="ev-theme"></select></div>
+    <div class="field">
+      <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:13px;color:var(--text);">
+        <input type="checkbox" id="ev-video-enabled" style="width:auto;"> Diffuser une vidéo de présentation
+      </label>
+      <input type="text" id="ev-video-url" placeholder="Lien YouTube ou Google Drive" style="margin-top:8px;">
+    </div>
     <div style="display:flex;gap:10px;margin-top:8px;">
       <button class="btn btn-ghost btn-full" onclick="closeModal('modal-event')">Annuler</button>
       <button class="btn btn-primary btn-full" onclick="saveEvent()">Enregistrer</button>
@@ -181,7 +188,7 @@
     <input type="hidden" id="en-id">
     <div class="field"><label>Titre (interne) *</label><input type="text" id="en-title" placeholder="Ex. Énigme 3 — Le code du coffre"></div>
     <div class="field"><label>Question / consigne *</label><textarea id="en-question" rows="3" placeholder="Texte affiché aux équipes…"></textarea></div>
-    <div class="field"><label>Image (URL, optionnel)</label><input type="text" id="en-image" placeholder="https://…"></div>
+    <div class="field"><label>Image (URL directe ou lien Google Drive)</label><input type="text" id="en-image" placeholder="https://… ou lien de partage Google Drive"></div>
     <div class="field"><label>Réponse(s) attendue(s) *</label><input type="text" id="en-answers" placeholder="séparées par une virgule — variantes acceptées"></div>
     <div class="field-row">
       <div class="field"><label>Points</label><input type="number" id="en-points" min="0" value="10"></div>
@@ -280,10 +287,18 @@ let teams = [];
 let liveChannel = null;
 let liveTimer = null;
 
+// Thèmes disponibles pour la page participant — ajoutés au fur et à mesure (avec Claude), un à la fois.
+const TB_THEMES = [
+  { value: 'default', label: 'Contrôle (par défaut)' },
+];
+
 window.addEventListener('load', async () => {
   try { await requireAuth(); } catch (e) { return; }
   ENIGMA_CONFIG.teamBuildingCategories.forEach(c => {
     document.getElementById('ev-category').insertAdjacentHTML('beforeend', `<option value="${c.value}">${c.label}</option>`);
+  });
+  TB_THEMES.forEach(t => {
+    document.getElementById('ev-theme').insertAdjacentHTML('beforeend', `<option value="${t.value}">${t.label}</option>`);
   });
   loadEvents();
 });
@@ -339,6 +354,9 @@ function openEventModal() {
   document.getElementById('ev-date').value = '';
   document.getElementById('ev-client').value = '';
   document.getElementById('ev-teamsize').value = '';
+  document.getElementById('ev-theme').value = 'default';
+  document.getElementById('ev-video-enabled').checked = false;
+  document.getElementById('ev-video-url').value = '';
   showModal('modal-event');
 }
 function editEvent(id) {
@@ -350,6 +368,9 @@ function editEvent(id) {
   document.getElementById('ev-date').value = e.event_date || '';
   document.getElementById('ev-client').value = e.client_name || '';
   document.getElementById('ev-teamsize').value = e.team_size || '';
+  document.getElementById('ev-theme').value = e.theme || 'default';
+  document.getElementById('ev-video-enabled').checked = !!e.video_enabled;
+  document.getElementById('ev-video-url').value = e.video_url || '';
   showModal('modal-event');
 }
 async function saveEvent() {
@@ -360,8 +381,12 @@ async function saveEvent() {
     event_date: document.getElementById('ev-date').value || null,
     client_name: document.getElementById('ev-client').value.trim() || null,
     team_size: parseInt(document.getElementById('ev-teamsize').value) || null,
+    theme: document.getElementById('ev-theme').value,
+    video_enabled: document.getElementById('ev-video-enabled').checked,
+    video_url: document.getElementById('ev-video-url').value.trim() || null,
   };
   if (!payload.name) return toast('Le nom est requis', 'err');
+  if (payload.video_enabled && !payload.video_url) return toast('Ajoutez un lien vidéo ou décochez l\'option', 'err');
   const q = id ? sb.from('tb_events').update(payload).eq('id', id) : sb.from('tb_events').insert([payload]);
   const { error } = await q;
   if (error) return toast('Erreur enregistrement', 'err');
@@ -508,6 +533,15 @@ function editEnigma(id) {
   document.getElementById('en-mode').value = en.validation_mode;
   showModal('modal-enigma');
 }
+// Convertit un lien de partage Google Drive en URL affichable directement comme image.
+// Le fichier doit être partagé en "Tous les utilisateurs disposant du lien".
+function normalizeDriveImageUrl(url) {
+  if (!url) return url;
+  const m = url.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/);
+  if (m) return `https://lh3.googleusercontent.com/d/${m[1]}`;
+  return url;
+}
+
 async function saveEnigma() {
   const id = document.getElementById('en-id').value;
   const answers = document.getElementById('en-answers').value.split(',').map(s => s.trim()).filter(Boolean);
@@ -515,7 +549,7 @@ async function saveEnigma() {
     event_id: currentEvent.id,
     title: document.getElementById('en-title').value.trim(),
     question_text: document.getElementById('en-question').value.trim(),
-    question_image_url: document.getElementById('en-image').value.trim() || null,
+    question_image_url: normalizeDriveImageUrl(document.getElementById('en-image').value.trim()) || null,
     expected_answers: answers,
     points: parseInt(document.getElementById('en-points').value) || 0,
     validation_mode: document.getElementById('en-mode').value,
