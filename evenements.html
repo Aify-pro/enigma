@@ -345,6 +345,7 @@ async function loadEvents() {
         <button class="btn btn-primary btn-sm" onclick="openEvent('${e.id}')">Ouvrir</button>
         <button class="btn btn-ghost btn-sm" onclick="openDuplicateModal('${e.id}')">Dupliquer</button>
         <button class="btn btn-ghost btn-sm" onclick="editEvent('${e.id}')">✎</button>
+        ${e.status === 'brouillon' ? `<button class="btn btn-danger btn-sm" onclick="deleteEvent('${e.id}')">🗑</button>` : ''}
       </td>
     </tr>`).join('');
 }
@@ -570,6 +571,13 @@ async function saveEnigma() {
   closeModal('modal-enigma');
   loadEnigmas();
 }
+async function deleteEvent(id) {
+  if (!confirm('Supprimer définitivement cet événement (brouillon) ? Cette action est irréversible.')) return;
+  const { error } = await sb.from('tb_events').delete().eq('id', id).eq('status', 'brouillon');
+  if (error) return toast('Erreur suppression : ' + error.message, 'err');
+  toast('Événement supprimé', 'ok');
+  loadEvents();
+}
 async function deleteEnigma(id) {
   if (!confirm('Supprimer cette énigme ? Les réponses associées seront perdues.')) return;
   const { error } = await sb.from('tb_enigmas').delete().eq('id', id);
@@ -686,6 +694,7 @@ function renderSubmissions(rows) {
       ? `<button class="btn btn-success btn-sm" onclick="overrideSubmission('${s.id}','validee',${s.tb_enigmas?.points ?? 0})">✓ Valider</button>
          <button class="btn btn-danger btn-sm" onclick="overrideSubmission('${s.id}','refusee',0)">✗ Refuser</button>`
       : `<button class="btn btn-ghost btn-sm" onclick="overrideSubmission('${s.id}', '${s.status === 'validee' ? 'refusee' : 'validee'}', ${s.status === 'validee' ? 0 : (s.points_awarded || 10)})">↩ Inverser</button>`;
+    const deleteBtn = `<button class="btn btn-danger btn-sm" onclick="deleteSubmission('${s.id}')" title="Supprimer cette réponse (donne une nouvelle tentative)">🗑</button>`;
     return `<tr>
       <td style="white-space:nowrap;">${new Date(s.submitted_at).toLocaleTimeString('fr-FR')}</td>
       <td>${escHtml(s.tb_teams?.name || '—')}${s.tb_teams?.number ? ' (#' + s.tb_teams.number + ')' : ''}</td>
@@ -694,9 +703,16 @@ function renderSubmissions(rows) {
       <td>${s.auto_correct === true ? '✅' : s.auto_correct === false ? '❌' : '—'}</td>
       <td>${statusHtml}</td>
       <td class="num">${s.points_awarded}</td>
-      <td class="row-actions">${actions}</td>
+      <td class="row-actions">${actions} ${deleteBtn}</td>
     </tr>`;
   }).join('');
+}
+async function deleteSubmission(id) {
+  if (!confirm('Supprimer cette réponse ? L\'équipe pourra soumettre à nouveau.')) return;
+  const { error } = await sb.from('tb_submissions').delete().eq('id', id);
+  if (error) return toast('Erreur suppression : ' + error.message, 'err');
+  toast('Réponse supprimée', 'ok');
+  loadSubmissions();
 }
 async function overrideSubmission(id, status, points) {
   const { error } = await sb.rpc('tb_staff_override_submission', { p_submission_id: id, p_status: status, p_points: points });
