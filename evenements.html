@@ -155,6 +155,7 @@
       <div class="field"><label>Client</label><input type="text" id="ev-client" placeholder="Nom du client"></div>
       <div class="field"><label>Taille d'équipe</label><input type="number" id="ev-teamsize" min="1" placeholder="4"></div>
     </div>
+    <div class="field"><label>Nombre de tentatives max par énigme</label><input type="number" id="ev-max-attempts" min="1" placeholder="Laisser vide = illimité"></div>
     <div class="field"><label>Thème visuel (page participant)</label><select id="ev-theme"></select></div>
     <div class="field">
       <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:13px;color:var(--text);">
@@ -356,6 +357,7 @@ function openEventModal() {
   document.getElementById('ev-date').value = '';
   document.getElementById('ev-client').value = '';
   document.getElementById('ev-teamsize').value = '';
+  document.getElementById('ev-max-attempts').value = '';
   document.getElementById('ev-theme').value = 'default';
   document.getElementById('ev-video-enabled').checked = false;
   document.getElementById('ev-video-url').value = '';
@@ -370,6 +372,7 @@ function editEvent(id) {
   document.getElementById('ev-date').value = e.event_date || '';
   document.getElementById('ev-client').value = e.client_name || '';
   document.getElementById('ev-teamsize').value = e.team_size || '';
+  document.getElementById('ev-max-attempts').value = e.max_attempts || '';
   document.getElementById('ev-theme').value = e.theme || 'default';
   document.getElementById('ev-video-enabled').checked = !!e.video_enabled;
   document.getElementById('ev-video-url').value = e.video_url || '';
@@ -383,11 +386,13 @@ async function saveEvent() {
     event_date: document.getElementById('ev-date').value || null,
     client_name: document.getElementById('ev-client').value.trim() || null,
     team_size: parseInt(document.getElementById('ev-teamsize').value) || null,
+    max_attempts: parseInt(document.getElementById('ev-max-attempts').value) || null,
     theme: document.getElementById('ev-theme').value,
     video_enabled: document.getElementById('ev-video-enabled').checked,
     video_url: document.getElementById('ev-video-url').value.trim() || null,
   };
   if (!payload.name) return toast('Le nom est requis', 'err');
+  if (payload.max_attempts !== null && payload.max_attempts < 1) return toast('Le nombre de tentatives max doit être supérieur à 0', 'err');
   if (payload.video_enabled && !payload.video_url) return toast('Ajoutez un lien vidéo ou décochez l\'option', 'err');
   const q = id ? sb.from('tb_events').update(payload).eq('id', id) : sb.from('tb_events').insert([payload]);
   const { error } = await q;
