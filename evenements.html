@@ -517,7 +517,7 @@ async function loadEnigmas() {
       <td class="num">${en.points}</td>
       <td>${en.validation_mode === 'auto' ? '⚙️ Auto' : '👤 Manuelle'}</td>
       <td class="row-actions">
-        <button class="btn btn-ghost btn-sm" onclick="showEnigmaQr('${en.unique_code}','${escHtml(en.title)}')">QR</button>
+        <button class="btn btn-ghost btn-sm" onclick="showEnigmaQr('${en.id}')">QR</button>
         <button class="btn btn-ghost btn-sm" onclick="editEnigma('${en.id}')">✎</button>
         <button class="btn btn-danger btn-sm" onclick="deleteEnigma('${en.id}')">🗑</button>
       </td>
@@ -767,8 +767,9 @@ function showQr(payload, title, codeLabel) {
   new QRCode(box, { text: payload, width: 200, height: 200, colorDark: '#0a0d14', colorLight: '#ffffff' });
   showModal('modal-qr');
 }
-function showEnigmaQr(code, title) {
-  showQr(`https://enigma.ci/teambuilding.html?event=${currentEvent.id}&enigma=${code}`, title, code);
+function showEnigmaQr(id) {
+  const en = enigmas.find(x => x.id === id); if (!en) return;
+  showQr(`https://enigma.ci/teambuilding.html?event=${currentEvent.id}&enigma=${en.unique_code}`, en.title, en.unique_code);
 }
 function printQr() {
   document.getElementById('print-title').textContent = qrCurrentTitle;
