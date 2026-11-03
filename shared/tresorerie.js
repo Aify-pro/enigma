@@ -99,6 +99,8 @@
     };
 
     // ── Tickets ──────────────────────────────────────────────
+    const advById = {};
+    (src.advances || []).forEach(a => { advById[a.id] = a; });
     const bankByTicket = new Set((src.bankTx || []).filter(b => b.ticket_id).map(b => b.ticket_id));
     (src.tickets || []).filter(t => t.status === 'confirmed').forEach(t => {
       const what = t.ticket_type === 'forfait' ? 'Forfait' : 'Ticket';
@@ -110,8 +112,25 @@
         ref: t.ticket_number || '', operator: t.operator_name || '', status: 'validated',
         source: 'tickets', sourceId: t.id, createdAt: t.created_at,
       };
-      push({ ...base, account: 'caisse',       dir: 'in', amount: n(t.payment_especes_xof) });
-      push({ ...base, account: 'mobile_money', dir: 'in', amount: n(t.payment_mobile_xof) });
+      // Un ticket ne peut pas encaisser plus que son prix : quand l'acompte a aussi été
+      // ressaisi en espèces ou en Mobile Money, l'excédent est retiré (d'abord sur le
+      // moyen de paiement de l'acompte, sinon sur les espèces = monnaie rendue).
+      let esp = n(t.payment_especes_xof), mm = n(t.payment_mobile_xof);
+      const others = n(t.payment_cheque_xof) + n(t.payment_virement_xof) + n(t.payment_voucher_xof) + n(t.payment_advance_xof);
+      let excess = esp + mm + others - n(t.total_price_xof);
+      if (excess > 0 && n(t.total_price_xof) > 0) {
+        const advAcc = t.advance_id && advById[t.advance_id] ? accountFromMethod(advById[t.advance_id].payment_method) : null;
+        const order = advAcc === 'mobile_money' ? ['mm', 'esp'] : ['esp', 'mm'];
+        const before = esp + mm;
+        order.forEach(k => {
+          const cut = Math.min(excess, k === 'mm' ? mm : esp);
+          if (k === 'mm') mm -= cut; else esp -= cut;
+          excess -= cut;
+        });
+        base.warning = `Paiements saisis supérieurs au prix : ${before - esp - mm} FCFA non comptés (acompte ressaisi ou monnaie rendue)`;
+      }
+      push({ ...base, account: 'caisse',       dir: 'in', amount: esp });
+      push({ ...base, account: 'mobile_money', dir: 'in', amount: mm });
       if (!bankByTicket.has(t.id)) {
         const bankPart = n(t.payment_cheque_xof) + n(t.payment_virement_xof);
         push({ ...base, account: 'banque', dir: 'in', amount: bankPart, warning: 'Ligne bancaire absente : générée depuis le ticket' });

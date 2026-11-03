@@ -209,7 +209,7 @@
     if (f.max != null && e.amount > f.max) return false;
     if (f.hideTransfers && e.nature === 'transfert' && e.counterAccount && EC.accounts.has(e.counterAccount)) return false;
     if (f.q) {
-      const hay = `${e.label} ${e.detail} ${e.ref} ${e.operator} ${e.categoryLabel}`.toLowerCase();
+      const hay = `${e.label} ${e.detail} ${e.ref} ${e.operator} ${e.categoryLabel} ${e.warning || ''}`.toLowerCase();
       if (!hay.includes(f.q)) return false;
     }
     return true;
@@ -375,8 +375,11 @@
     const items = [];
     const pending = e.filter(x => x.source === 'expenses' && x.status === 'pending' && x.dir === 'out');
     if (pending.length) items.push({ txt: `${pending.length} dépense(s) en attente de validation (${money(pending.reduce((s, x) => s + x.amount, 0))}) — déjà déduites des soldes.`, act: "ecQuick('pending')" });
-    const gen = e.filter(x => x.warning);
+    const gen = e.filter(x => x.warning && x.account === 'banque');
     if (gen.length) items.push({ txt: `${gen.length} règlement(s) par chèque/virement sans ligne bancaire : l'entrée en banque a été reconstituée depuis le ticket.`, act: "ecQuick('warning')" });
+    const over = e.filter(x => x.warning && x.account !== 'banque' && x.warning.includes('supérieurs au prix'));
+    const overTickets = new Set(over.map(x => x.sourceId)).size;
+    if (overTickets) items.push({ txt: `${overTickets} ticket(s) dont les paiements saisis dépassent le prix (souvent l'acompte ressaisi en espèces ou Mobile Money) : seul le prix du ticket est compté.`, act: "ecQuick('overpaid')" });
     const retraits = e.filter(x => x.source === 'bank_transactions' && x.category === 'retrait');
     if (retraits.length) items.push({ txt: `${retraits.length} retrait(s) bancaire(s) saisi(s) dans l'onglet Banque (${money(retraits.reduce((s, x) => s + x.amount, 0))}) : si l'argent est allé en caisse, vérifiez qu'il y a bien l'entrée correspondante en caisse, sinon c'est une dépense payée par la banque.`, act: "ecQuick('retrait')" });
     const legacy = e.filter(x => x.source === 'caisse_regulations' && x.nature === 'ajustement' && ['depot', 'retrait'].includes(x.category));
@@ -396,7 +399,8 @@
     ecResetFiltersSilently();
     applyPreset('all', false);
     if (kind === 'pending') $('ec-status').value = 'pending';
-    if (kind === 'warning') { $('ec-q').value = ''; EC.accounts = new Set(['banque']); syncToggles(); $('ec-cat').value = 'vente|standard'; }
+    if (kind === 'warning') { $('ec-q').value = 'ligne bancaire absente'; EC.accounts = new Set(['banque']); syncToggles(); }
+    if (kind === 'overpaid') { $('ec-q').value = 'supérieurs au prix'; EC.natures = new Set(['vente']); syncToggles(); }
     if (kind === 'retrait') { EC.accounts = new Set(['banque']); syncToggles(); $('ec-cat').value = 'banque|retrait'; }
     if (kind === 'legacy') { EC.natures = new Set(['ajustement']); syncToggles(); }
     if (kind === 'unpointed') $('ec-point').value = 'no';
