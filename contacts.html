@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Contacts — Enigma</title>
+  <link rel="stylesheet" href="shared/style.css">
+  <style>
+    .ct-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .ct-kpi { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+    .ct-kpi b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+    .ct-kpi span { font-size: 10.5px; color: var(--text3); text-transform: uppercase; letter-spacing: .04em; }
+    .ct-filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px 10px; padding: 14px; margin-bottom: 10px; }
+    .ct-filters .field { margin: 0; }
+    .ct-search { grid-column: span 2; }
+    @media (max-width: 560px) { .ct-search { grid-column: span 1; } }
+    .ct-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+    .ct-actions .sel { font-size: 12px; color: var(--text2); margin-right: auto; }
+    .ct-table td, .ct-table th { font-size: 12.5px; vertical-align: top; }
+    .ct-table input[type=checkbox] { width: auto; cursor: pointer; }
+    .ct-sub { font-size: 11px; color: var(--text3); }
+    .ct-optout td { opacity: .55; }
+    .ct-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 200; display: none; }
+    .ct-backdrop.open { display: block; }
+    .ct-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 520px; max-width: 100vw; background: var(--bg2);
+      border-left: 1px solid var(--border2); z-index: 201; transform: translateX(100%); transition: transform .25s ease;
+      overflow-y: auto; padding: 20px 20px 32px; display: flex; flex-direction: column; gap: 12px; }
+    .ct-drawer.open { transform: translateX(0); }
+    .ct-preview { background: #fff; color: #1a1a1a; border-radius: var(--radius-sm); padding: 14px 16px; font-size: 13.5px; line-height: 1.5; }
+    .ct-preview h3 { color: #7c6af7; margin: 0 0 8px; font-size: 16px; }
+    .ct-wa-list { display: flex; flex-direction: column; gap: 6px; }
+    .ct-wa-item { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 8px 10px; background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12.5px; }
+    .ct-wa-item.done { opacity: .5; }
+    .ct-set-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+    .ct-set-grid .field { margin: 0; }
+    .ct-vars { font-size: 11px; color: var(--text3); }
+    .ct-vars code { font-family: var(--mono); background: var(--bg4); padding: 1px 5px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+<nav class="navbar"></nav>
+<div id="toast-container"></div>
+
+<div class="page">
+  <div class="page-title">📇 Contacts</div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="contacts" onclick="ctTab('contacts')">👥 Contacts</button>
+    <button class="tab-btn" data-tab="messages" onclick="ctTab('messages')">✉️ Messages envoyés</button>
+    <button class="tab-btn" data-tab="parrainage" onclick="ctTab('parrainage')">🤝 Parrainage</button>
+  </div>
+
+  <!-- ── Contacts ─────────────────────────────────────────── -->
+  <div id="tab-contacts" class="tab-panel active">
+    <div id="ct-kpis" class="ct-kpis"></div>
+    <div class="card ct-filters">
+      <div class="field ct-search"><label>Recherche</label><input id="f-q" placeholder="Nom, e-mail, téléphone, code joueur…" oninput="ctRenderSoon()"></div>
+      <div class="field"><label>Origine</label><select id="f-src" onchange="ctRender()">
+        <option value="">Tous</option><option value="sub">Abonnés (compte joueur)</option><option value="resa">Ont réservé sur le site</option>
+        <option value="both">Abonnés ayant réservé</option><option value="resa_only">Réservation sans compte</option></select></div>
+      <div class="field"><label>Joignable par</label><select id="f-chan" onchange="ctRender()">
+        <option value="">Peu importe</option><option value="email">E-mail</option><option value="phone">Téléphone / WhatsApp</option></select></div>
+      <div class="field"><label>Réservations</label><select id="f-resa" onchange="ctRender()">
+        <option value="">Peu importe</option><option value="ok">Au moins une confirmée</option><option value="none">Aucune confirmée</option>
+        <option value="recent">Réservé dans les 90 derniers jours</option><option value="old">Pas réservé depuis 90 jours</option></select></div>
+      <div class="field"><label>Parrainage</label><select id="f-ref" onchange="ctRender()">
+        <option value="">Peu importe</option><option value="parrain">A parrainé quelqu'un</option><option value="filleul">Est un filleul</option></select></div>
+      <div class="field"><label>Désinscrits</label><select id="f-opt" onchange="ctRender()">
+        <option value="hide">Masquer</option><option value="">Afficher</option><option value="only">Seulement eux</option></select></div>
+    </div>
+    <div class="ct-actions">
+      <span class="sel" id="ct-selinfo"></span>
+      <button class="btn btn-ghost btn-sm" onclick="ctSelectAll(true)">Tout sélectionner (filtre)</button>
+      <button class="btn btn-ghost btn-sm" onclick="ctSelectAll(false)">Désélectionner</button>
+      <button class="btn btn-ghost btn-sm" onclick="ctExport()">⬇️ Export CSV</button>
+      <button class="btn btn-primary btn-sm" onclick="ctOpenEmail()">✉️ Envoyer un e-mail</button>
+      <button class="btn btn-success btn-sm" onclick="ctOpenWhatsapp()">💬 WhatsApp</button>
+    </div>
+    <div class="card" style="padding:0;">
+      <div class="table-wrap"><table class="ct-table">
+        <thead><tr>
+          <th style="width:28px;"><input type="checkbox" id="ct-all" onchange="ctSelectAll(this.checked)" title="Tout sélectionner"></th>
+          <th>Contact</th><th>E-mail</th><th>Téléphone</th><th>Origine</th>
+          <th style="text-align:right;">Résas</th><th>Dernière résa</th><th>Parrainage</th>
+        </tr></thead>
+        <tbody id="ct-body"><tr><td colspan="8" class="text-muted" style="padding:20px;text-align:center;">Chargement…</td></tr></tbody>
+      </table></div>
+      <div id="ct-more" class="text-muted" style="padding:10px 14px;font-size:12px;"></div>
+    </div>
+  </div>
+
+  <!-- ── Messages envoyés ─────────────────────────────────── -->
+  <div id="tab-messages" class="tab-panel">
+    <div class="card" style="padding:0;">
+      <div class="table-wrap"><table class="ct-table">
+        <thead><tr><th>Date</th><th>Canal</th><th>Objet / message</th><th style="text-align:right;">Destinataires</th><th style="text-align:right;">Envoyés</th><th style="text-align:right;">Échecs</th><th style="text-align:right;">Ignorés</th><th>Par</th></tr></thead>
+        <tbody id="msg-body"></tbody>
+      </table></div>
+    </div>
+    <div id="msg-detail" class="card hidden" style="margin-top:12px;"></div>
+  </div>
+
+  <!-- ── Parrainage ───────────────────────────────────────── -->
+  <div id="tab-parrainage" class="tab-panel">
+    <div class="card" style="padding:16px;margin-bottom:12px;">
+      <div class="card-title">⚙️ Règles du parrainage</div>
+      <p class="text-muted" style="font-size:12px;margin:4px 0 12px;">Chaque joueur dispose, dans son espace sur enigma.ci, d'un lien et d'un QR code de parrainage.
+        Un nouvel inscrit qui l'utilise devient son filleul. Les points sont gagnés quand le filleul est validé ; à chaque seuil atteint, un coupon cadeau est créé automatiquement pour le parrain (visible dans Admin › Coupons et dans son espace joueur).</p>
+      <div class="ct-set-grid">
+        <label class="field" style="display:flex;gap:8px;align-items:center;"><input type="checkbox" id="p-enabled" style="width:auto;"> Parrainage activé</label>
+        <div class="field"><label>Filleul validé quand…</label><select id="p-validation">
+          <option value="premiere_partie">il a joué sa première partie (recommandé)</option>
+          <option value="inscription">il crée son compte</option></select></div>
+        <div class="field"><label>Points par filleul validé</label><input type="number" id="p-points" min="1"></div>
+        <div class="field"><label>Points pour gagner un coupon</label><input type="number" id="p-seuil" min="1"></div>
+        <div class="field"><label>Valeur du coupon (FCFA)</label><input type="number" id="p-montant" min="0" step="500"></div>
+        <div class="field"><label>Validité du coupon (jours, 0 = illimitée)</label><input type="number" id="p-validite" min="0"></div>
+      </div>
+      <div id="p-summary" class="text-muted" style="font-size:12px;margin:10px 0;"></div>
+      <button class="btn btn-primary btn-sm" onclick="ctSaveSettings()">Enregistrer les règles</button>
+    </div>
+    <div id="p-kpis" class="ct-kpis"></div>
+    <div class="card" style="padding:0;margin-bottom:12px;">
+      <div class="card-title" style="padding:14px 14px 0;">🏅 Parrains</div>
+      <div class="table-wrap"><table class="ct-table">
+        <thead><tr><th>Parrain</th><th>Code</th><th style="text-align:right;">Validés</th><th style="text-align:right;">En attente</th><th style="text-align:right;">Points restants</th><th>Coupons gagnés</th></tr></thead>
+        <tbody id="p-parrains"></tbody></table></div>
+    </div>
+    <div class="card" style="padding:0;">
+      <div class="card-title" style="padding:14px 14px 0;">🧑‍🤝‍🧑 Filleuls</div>
+      <div class="table-wrap"><table class="ct-table">
+        <thead><tr><th>Date</th><th>Filleul</th><th>Parrain</th><th>Statut</th><th style="text-align:right;">Points</th><th></th></tr></thead>
+        <tbody id="p-filleuls"></tbody></table></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Composer : e-mail ──────────────────────────────────── -->
+<div id="ct-backdrop" class="ct-backdrop" onclick="ctClose()"></div>
+<div id="ct-email" class="ct-drawer">
+  <div class="flex-between"><div style="font-size:15px;font-weight:700;">✉️ Envoyer un e-mail</div><button class="btn btn-ghost btn-sm" onclick="ctClose()">✕</button></div>
+  <div id="em-info" class="text-muted" style="font-size:12px;"></div>
+  <div class="field"><label>Objet *</label><input id="em-subject" maxlength="200" oninput="ctEmailPreview()" placeholder="Nouvelle salle : réservez en avant-première"></div>
+  <div class="field"><label>Message *</label><textarea id="em-message" rows="10" oninput="ctEmailPreview()" placeholder="Bonjour {prenom},&#10;&#10;…"></textarea></div>
+  <div class="ct-vars">Variables : <code>{prenom}</code> premier mot du nom, <code>{nom}</code> nom complet. Les liens (https://…) deviennent cliquables. Un lien de désinscription est ajouté automatiquement.</div>
+  <div class="text-muted" style="font-size:11px;">Aperçu (premier destinataire) :</div>
+  <div id="em-preview" class="ct-preview"></div>
+  <button class="btn btn-primary btn-full" id="em-send" onclick="ctSendEmail()">Envoyer</button>
+</div>
+
+<!-- ── Composer : WhatsApp ───────────────────────────────── -->
+<div id="ct-wa" class="ct-drawer">
+  <div class="flex-between"><div style="font-size:15px;font-weight:700;">💬 Message WhatsApp</div><button class="btn btn-ghost btn-sm" onclick="ctClose()">✕</button></div>
+  <div class="text-muted" style="font-size:12px;">WhatsApp s'ouvre pour chaque contact avec le message déjà rédigé : il ne reste qu'à appuyer sur « Envoyer » dans WhatsApp. Les contacts ouverts sont enregistrés dans l'historique.</div>
+  <div class="field"><label>Message *</label><textarea id="wa-message" rows="7" placeholder="Bonjour {prenom}, …"></textarea></div>
+  <div class="ct-vars">Variables : <code>{prenom}</code>, <code>{nom}</code>.</div>
+  <div id="wa-info" class="text-muted" style="font-size:12px;"></div>
+  <button class="btn btn-success btn-full" onclick="ctWaNext()">Ouvrir le contact suivant</button>
+  <div id="wa-list" class="ct-wa-list"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="shared/config.js"></script>
+<script src="shared/auth.js"></script>
+<script src="shared/contacts.js"></script>
+<script>
+window.addEventListener('load', async () => {
+  try { await requireAdmin(); } catch (e) { return; }
+  ctInit();
+});
+</script>
+</body>
+</html>
