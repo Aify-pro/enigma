@@ -573,58 +573,112 @@
   }
 
   // ── Contrôles de caisse ────────────────────────────────────
-  function ecOpenControl() {
-    if (!EC.hasControls) return toast('Migration non appliquée : historique des contrôles indisponible', 'err');
-    $('ec-c-account').innerHTML = accountOptions();
-    $('ec-c-date').value = $('ec-asof').value || todayStr();
-    $('ec-c-amount').value = ''; $('ec-c-note').value = ''; $('ec-c-book').checked = false;
+  // ── Comptage physique (inventaire monétaire) ───────────────
+  // Coupures du franc CFA (BCEAO) en circulation.
+  const DENOMS = [
+    { v: 10000, k: 'billet' }, { v: 5000, k: 'billet' }, { v: 2000, k: 'billet' }, { v: 1000, k: 'billet' }, { v: 500, k: 'billet' },
+    { v: 500, k: 'piece' }, { v: 250, k: 'piece' }, { v: 200, k: 'piece' }, { v: 100, k: 'piece' },
+    { v: 50, k: 'piece' }, { v: 25, k: 'piece' }, { v: 10, k: 'piece' }, { v: 5, k: 'piece' },
+  ];
+  const denomId = (d, i) => `ec-c-q${i}`;
+
+  async function ecOpenControl() {
+    if (!EC.loaded) await ecLoad();
+    if (!EC.hasControls) return toast('Migration non appliquée : comptage indisponible', 'err');
+    $('ec-c-billetage').innerHTML = `<div class="ec-bill-grid">${DENOMS.map((d, i) => `
+      <label class="ec-bill"><span>${d.k === 'billet' ? '💶' : '🪙'} ${fmt(d.v)}</span>
+        <input type="number" min="0" step="1" id="${denomId(d, i)}" placeholder="0" oninput="ecControlPreview()" />
+        <span class="ec-bill-sub" id="${denomId(d, i)}-t"></span></label>`).join('')}
+      <label class="ec-bill"><span>➕ Autre montant</span>
+        <input type="number" min="0" id="ec-c-other" placeholder="0" oninput="ecControlPreview()" /><span class="ec-bill-sub"></span></label>
+    </div>`;
+    $('ec-c-date').value = todayStr();
+    ['ec-c-mm', 'ec-c-bank', 'ec-c-note'].forEach(id => ($(id).value = ''));
+    $('ec-c-by').value = currentUser?.display_name || '';
+    $('ec-c-book').checked = false;
     ecControlPreview();
     openDrawer('ec-control-drawer');
   }
 
   function controlFigures() {
-    const date = $('ec-c-date').value, account = $('ec-c-account').value;
-    const theo = T.balancesAt(EC.entries, date)[account];
-    const raw = $('ec-c-amount').value;
-    return { date, account, theo, counted: raw === '' ? null : parseInt(raw, 10), };
+    const date = $('ec-c-date').value;
+    const bal = date ? T.balancesAt(EC.entries, date) : { caisse: 0, mobile_money: 0, banque: 0 };
+    const billetage = [];
+    let cash = 0, any = false;
+    DENOMS.forEach((d, i) => {
+      const raw = $(denomId(d, i)).value;
+      const q = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
+      if (raw !== '') any = true;
+      if (q) billetage.push({ valeur: d.v, type: d.k, quantite: q });
+      cash += q * d.v;
+      $(denomId(d, i) + '-t').textContent = q ? fmt(q * d.v) : '';
+    });
+    const otherRaw = $('ec-c-other').value;
+    const other = otherRaw === '' ? 0 : Math.max(0, parseInt(otherRaw, 10) || 0);
+    if (otherRaw !== '') any = true;
+    if (other) billetage.push({ valeur: other, type: 'autre', quantite: 1 });
+    cash += other;
+    const read = id => ($(id).value === '' ? null : Math.max(0, parseInt($(id).value, 10) || 0));
+    const rows = [
+      { account: 'caisse', counted: any ? cash : null, theo: bal.caisse, billetage },
+      { account: 'mobile_money', counted: read('ec-c-mm'), theo: bal.mobile_money },
+      { account: 'banque', counted: read('ec-c-bank'), theo: bal.banque },
+    ];
+    return { date, rows };
   }
 
   function ecControlPreview() {
-    const { theo, counted, date } = controlFigures();
-    const ecart = counted == null ? null : counted - theo;
-    $('ec-c-preview').innerHTML = `
-      <div class="flex-between"><span>Solde théorique au ${formatDate(date)} au soir</span><strong>${money(theo)}</strong></div>
-      ${ecart == null ? '' : `<div class="flex-between" style="margin-top:4px;"><span>Écart</span>
-        <strong style="color:${ecart === 0 ? 'var(--green)' : 'var(--red)'};">${ecart === 0 ? 'Aucun ✓' : signedMoney(ecart)}</strong></div>`}`;
+    const { date, rows } = controlFigures();
+    $('ec-c-preview').innerHTML = `<div style="font-size:11px;color:var(--text3);margin-bottom:6px;">Soldes théoriques au ${date ? formatDate(date) : '—'} au soir</div>
+      <table style="width:100%;font-size:12.5px;"><thead><tr><th style="text-align:left;">Compte</th><th style="text-align:right;">Théorique</th><th style="text-align:right;">Compté</th><th style="text-align:right;">Écart</th></tr></thead><tbody>
+      ${rows.map(r => {
+        const ecart = r.counted == null ? null : r.counted - r.theo;
+        return `<tr><td>${A[r.account].icon} ${A[r.account].short}</td><td style="text-align:right;">${money(r.theo)}</td>
+          <td style="text-align:right;font-weight:700;">${r.counted == null ? '<span class="text-muted">—</span>' : money(r.counted)}</td>
+          <td style="text-align:right;font-weight:700;color:${ecart == null ? 'var(--text3)' : ecart === 0 ? 'var(--green)' : 'var(--red)'};">${ecart == null ? '' : ecart === 0 ? '✓' : signedMoney(ecart)}</td></tr>`;
+      }).join('')}</tbody></table>`;
   }
 
   async function ecSaveControl() {
-    const { date, account, theo, counted } = controlFigures();
-    if (!date || counted == null || isNaN(counted)) return toast('Date et montant compté requis', 'err');
-    const note = $('ec-c-note').value.trim() || null;
-    const { error } = await sb.from('tresorerie_controles').insert([{
-      date, account, montant_compte_xof: counted, solde_theorique_xof: theo, note, created_by: currentUser?.email || null,
-    }]);
+    const { date, rows } = controlFigures();
+    if (!date) return toast('Date du comptage requise', 'err');
+    if (date > todayStr()) return toast('La date du comptage ne peut pas être dans le futur', 'err');
+    if (rows[0].counted == null) return toast('Saisissez le billetage de la caisse (mettez 0 pour une coupure absente)', 'err');
+    const by = $('ec-c-by').value.trim();
+    const note = [by ? 'Compté par ' + by : '', $('ec-c-note').value.trim()].filter(Boolean).join(' · ') || null;
+    const inventaireId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : null;
+    const filled = rows.filter(r => r.counted != null);
+    const { error } = await sb.from('tresorerie_controles').insert(filled.map(r => ({
+      date, account: r.account, montant_compte_xof: r.counted, solde_theorique_xof: r.theo, note,
+      created_by: currentUser?.email || null, inventaire_id: inventaireId,
+      billetage: r.account === 'caisse' ? r.billetage : null,
+    })));
     if (error) return toast('Erreur : ' + error.message, 'err');
-    const ecart = counted - theo;
-    if (ecart !== 0 && $('ec-c-book').checked) {
-      const payload = {
-        date, type: 'ecart', label: `Écart constaté au contrôle (${A[account].short})`, amount_xof: Math.abs(ecart),
-        direction: ecart > 0 ? 'credit' : 'debit', description: note, created_by: currentUser?.email || null,
-      };
-      if (EC.hasAccounts) payload.account = account;
-      const r = await sb.from('caisse_regulations').insert([payload]);
-      if (r.error) toast('Contrôle enregistré, mais ajustement impossible : ' + r.error.message, 'err');
+    if ($('ec-c-book').checked) {
+      const regs = filled.filter(r => r.counted !== r.theo).map(r => {
+        const ecart = r.counted - r.theo;
+        const payload = {
+          date, type: 'ecart', label: `Écart constaté au comptage (${A[r.account].short})`, amount_xof: Math.abs(ecart),
+          direction: ecart > 0 ? 'credit' : 'debit', description: note, created_by: currentUser?.email || null,
+        };
+        if (EC.hasAccounts) payload.account = r.account;
+        return payload;
+      }).filter(p => EC.hasAccounts || p.label.includes(A.caisse.short));
+      if (regs.length) {
+        const r = await sb.from('caisse_regulations').insert(regs);
+        if (r.error) toast('Inventaire enregistré, mais ajustement impossible : ' + r.error.message, 'err');
+      }
     }
-    toast('Contrôle enregistré', 'ok');
+    toast('Inventaire enregistré', 'ok');
     ecCloseDrawers();
+    if (typeof window.enigmaInventaireBanner === 'function') window.enigmaInventaireBanner();
     ecLoad();
   }
 
   function renderControls() {
     const el = $('ec-controls');
     if (!EC.hasControls) { el.innerHTML = '<div class="text-muted">Disponible après application de la migration.</div>'; return; }
-    if (!EC.controls.length) { el.innerHTML = '<div class="text-muted">Aucun contrôle enregistré. Bouton « 🧮 Contrôle » pour saisir un comptage.</div>'; return; }
+    if (!EC.controls.length) { el.innerHTML = '<div class="text-muted">Aucun inventaire enregistré. Bouton « 🧮 Comptage physique » pour compter la caisse.</div>'; return; }
     el.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Date</th><th>Compte</th><th style="text-align:right;">Compté</th><th style="text-align:right;">Théorique</th><th style="text-align:right;">Écart</th><th></th></tr></thead><tbody>
       ${EC.controls.slice(0, 30).map(c => {
         const ecart = c.montant_compte_xof - c.solde_theorique_xof;
@@ -632,7 +686,7 @@
           <td style="text-align:right;">${money(c.montant_compte_xof)}</td>
           <td style="text-align:right;color:var(--text3);">${money(c.solde_theorique_xof)}</td>
           <td style="text-align:right;font-weight:700;color:${ecart === 0 ? 'var(--green)' : 'var(--red)'};">${ecart === 0 ? '✓' : signedMoney(ecart)}</td>
-          <td style="font-size:11px;color:var(--text3);">${escHtml(c.note || '')}${c.created_by ? `<div>${escHtml(c.created_by)}</div>` : ''}</td></tr>`;
+          <td style="font-size:11px;color:var(--text3);">${escHtml(c.note || '')}${Array.isArray(c.billetage) && c.billetage.length ? `<div title="Billetage">${c.billetage.map(b => b.type === 'autre' ? 'autre ' + fmt(b.valeur) : b.quantite + ' × ' + fmt(b.valeur)).join(' · ')}</div>` : ''}${c.created_by ? `<div>${escHtml(c.created_by)}</div>` : ''}</td></tr>`;
       }).join('')}</tbody></table></div>
       <div class="text-muted" style="font-size:11px;margin-top:6px;">« Théorique » = solde calculé au moment du contrôle. Si une ligne est saisie après coup, l'écart réel peut avoir changé.</div>`;
   }

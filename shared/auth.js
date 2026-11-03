@@ -138,6 +138,7 @@ async function requireAuth() {
   document.documentElement.style.visibility = 'visible';
   enigmaApplyUserToNav();
   enigmaStartPendingBadge();
+  if (currentUser.role === 'admin') enigmaInventaireBanner().catch(() => {});
   return session;
 }
 
@@ -245,3 +246,49 @@ document.addEventListener('keydown', e => {
   const links = [...document.querySelectorAll('#nav-rail .nav-link:not(.hidden)')];
   if (links[i - 1]) { e.preventDefault(); window.location.href = links[i - 1].getAttribute('href'); }
 });
+
+// ── Inventaire monétaire hebdomadaire (comptes administrateurs) ─
+// Chaque semaine (du lundi au dimanche), un comptage physique de la caisse
+// doit être enregistré (Admin › État de caisse › 🧮 Comptage physique).
+// Tant qu'il manque, un bandeau rouge s'affiche sur toutes les pages pour
+// les administrateurs, avec le nombre de jours écoulés depuis le dernier comptage.
+function enigmaIsoDay(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+
+// Fonction pure (testable) : statut de l'inventaire à partir du dernier comptage.
+// last = { date: 'AAAA-MM-JJ', created_at: ISO } ou null ; today = Date
+function enigmaInventaireStatus(last, today) {
+  const t = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const monday = new Date(t); monday.setDate(t.getDate() - ((t.getDay() + 6) % 7));
+  const weekStart = enigmaIsoDay(monday);
+  if (!last) return { due: true, weekStart, daysSince: null, lastDate: null };
+  const lastDay = new Date(last.date + 'T00:00:00');
+  const daysSince = Math.round((t - lastDay) / 86400000);
+  const savedDay = last.created_at ? enigmaIsoDay(new Date(last.created_at)) : last.date;
+  // Le comptage de la semaine doit porter sur la semaine ET avoir été saisi cette semaine
+  const done = last.date >= weekStart && savedDay >= weekStart;
+  return { due: !done, weekStart, daysSince, lastDate: last.date };
+}
+
+async function enigmaInventaireBanner() {
+  if (!isAdmin()) return;
+  let el = document.getElementById('enigma-inventaire-banner');
+  const { data, error } = await sb.from('tresorerie_controles').select('date,created_at')
+    .eq('account', 'caisse').order('date', { ascending: false }).order('created_at', { ascending: false }).limit(1);
+  if (error) { if (el) el.remove(); return; } // table absente : rien à exiger
+  const st = enigmaInventaireStatus((data || [])[0] || null, new Date());
+  if (!st.due) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'enigma-inventaire-banner';
+    el.setAttribute('role', 'alert');
+    el.style.cssText = 'background:#b91c1c;color:#fff;padding:10px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;font-size:13px;font-weight:600;position:relative;z-index:50;';
+    const nav = document.querySelector('nav.navbar');
+    if (nav && nav.parentNode) nav.parentNode.insertBefore(el, nav.nextSibling); else document.body.prepend(el);
+  }
+  const fr = iso => iso.split('-').reverse().join('/');
+  const retard = st.daysSince == null
+    ? 'Aucun comptage physique n\'a encore été enregistré.'
+    : `<span style="font-size:15px;font-weight:800;">${st.daysSince} jour${st.daysSince > 1 ? 's' : ''} sans comptage</span> (dernier comptage le ${fr(st.lastDate)}).`;
+  el.innerHTML = `<span>🔴 <strong>Inventaire monétaire de la semaine obligatoire</strong> — comptez la caisse (billets et pièces) et relevez les soldes Mobile Money et banque. ${retard}</span>
+    <a href="admin.html#inventaire" style="background:#fff;color:#b91c1c;padding:6px 12px;border-radius:6px;text-decoration:none;font-weight:700;white-space:nowrap;">🧮 Faire le comptage</a>`;
+}

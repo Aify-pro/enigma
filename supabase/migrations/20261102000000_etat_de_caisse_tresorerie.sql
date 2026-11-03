@@ -12,7 +12,11 @@
 --    quand elle a été vérifiée (relevé bancaire, historique Wave,
 --    comptage). La clé identifie l'écriture : table:id:compte:sens.
 -- 3. tresorerie_controles : comptage réel d'un compte à une date,
---    comparé au solde théorique calculé par l'application.
+--    comparé au solde théorique calculé par l'application. Un
+--    inventaire monétaire (comptage physique) regroupe une ligne par
+--    compte relevé sous le même inventaire_id ; la ligne caisse garde
+--    le billetage (quantité par billet / pièce). Un inventaire de la
+--    caisse est exigé chaque semaine (bandeau rouge côté admin).
 -- Accès : réservé aux administrateurs, comme caisse_regulations.
 -- ============================================================
 
@@ -53,11 +57,17 @@ CREATE TABLE IF NOT EXISTS public.tresorerie_controles (
   montant_compte_xof  integer NOT NULL,
   solde_theorique_xof integer NOT NULL,
   note                text,
+  inventaire_id       uuid,
+  billetage           jsonb,
   created_by          text,
   created_at          timestamptz NOT NULL DEFAULT now()
 );
 
+COMMENT ON COLUMN public.tresorerie_controles.billetage IS
+  'Comptage physique de la caisse : [{valeur, type (billet|piece|autre), quantite}].';
+
 CREATE INDEX IF NOT EXISTS tresorerie_controles_date_idx ON public.tresorerie_controles (date);
+CREATE INDEX IF NOT EXISTS tresorerie_controles_inventaire_idx ON public.tresorerie_controles (inventaire_id);
 
 ALTER TABLE public.tresorerie_pointages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tresorerie_controles ENABLE ROW LEVEL SECURITY;
