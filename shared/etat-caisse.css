@@ -1,0 +1,63 @@
+/* Enigma — onglet « État de caisse » (admin.html) */
+.ec-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.ec-head-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ec-asof { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text2); }
+.ec-asof input { width: 150px; }
+
+.ec-notice { background: rgba(245,195,68,.10); border: 1px solid rgba(245,195,68,.35); color: var(--yellow); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 12px; margin-bottom: 12px; }
+.ec-notice code { font-family: var(--mono); font-size: 11px; }
+
+.ec-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+@media (max-width: 900px) { .ec-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.ec-kpi { background: var(--bg3); border: 1px solid var(--border); border-top: 3px solid var(--border2); border-radius: var(--radius); padding: 12px 14px; min-width: 0; }
+.ec-kpi-total { background: var(--bg4); }
+.ec-kpi-value { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ec-kpi-sub { font-size: 10.5px; color: var(--text3); margin-top: 3px; }
+
+.ec-filters { padding: 14px; margin-bottom: 12px; }
+.ec-filter-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.ec-filter-foot { margin: 4px 0 0; }
+.ec-presets { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+.ec-presets .chip { cursor: pointer; }
+.ec-presets .chip.active { border-color: var(--purple); color: var(--text); background: rgba(133,122,245,.14); }
+.ec-period { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--text2); }
+.ec-period label { display: flex; gap: 6px; align-items: center; }
+.ec-period input { width: 145px; }
+.ec-group-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text3); }
+.ec-toggles { display: flex; gap: 6px; flex-wrap: wrap; margin-right: 10px; }
+.ec-toggle { display: inline-flex; gap: 5px; align-items: center; padding: 5px 10px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; cursor: pointer; color: var(--text3); user-select: none; }
+.ec-toggle input { display: none; }
+.ec-toggle.on { border-color: var(--purple); color: var(--text); background: rgba(133,122,245,.12); }
+.ec-filter-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px 10px; }
+.ec-filter-grid .field { margin: 0; }
+.ec-search { grid-column: span 2; }
+@media (max-width: 560px) { .ec-search { grid-column: span 1; } }
+.ec-check { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--text2); cursor: pointer; }
+.ec-check input { width: auto; }
+
+.ec-summary { margin-bottom: 12px; }
+.ec-sum-title { font-size: 12px; color: var(--text2); margin-bottom: 6px; }
+.ec-sum-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.ec-sum-box { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 12px; }
+.ec-sum-value { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.ec-table td, .ec-table th { font-variant-numeric: tabular-nums; }
+.ec-table td { vertical-align: top; }
+.ec-table input[type=checkbox] { width: auto; cursor: pointer; }
+.ec-table tbody tr.ec-pointed td { background: rgba(74,222,128,.045); }
+.ec-table tbody tr.ec-pending td { background: rgba(245,195,68,.05); }
+.ec-table tfoot td { border-top: 2px solid var(--border2); }
+.ec-report td { color: var(--text2); font-style: italic; background: var(--bg3); }
+.ec-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.ec-transfer { font-size: 11px; color: var(--purple); white-space: nowrap; }
+.ec-acc { font-size: 11px; font-weight: 600; white-space: nowrap; padding: 2px 7px; border-radius: 999px; background: var(--bg4); }
+.ec-acc-caisse { color: var(--green); }
+.ec-acc-mobile_money { color: var(--cyan); }
+.ec-acc-banque { color: var(--yellow); }
+.ec-more { padding: 10px 14px; font-size: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; border-top: 1px solid var(--border); }
+
+.ec-bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+@media (max-width: 900px) { .ec-bottom { grid-template-columns: 1fr; } }
+.ec-check-item { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.ec-check-item:last-child { border-bottom: none; }
+.ec-c-preview { background: var(--bg3); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 12px; font-size: 13px; }

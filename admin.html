@@ -6,6 +6,7 @@
   <title>Administration — Enigma</title>
   <link rel="stylesheet" href="shared/style.css">
   <link rel="stylesheet" href="shared/print.css">
+  <link rel="stylesheet" href="shared/etat-caisse.css">
   <style>
     .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 0; }
     .tab-btn {
@@ -183,6 +184,7 @@
     <button class="tab-btn"       onclick="switchTab('vouchers')">🎟 Coupons</button>
     <button class="tab-btn"       onclick="switchTab('products')">🛒 Produits</button>
     <button class="tab-btn"       onclick="switchTab('users')">👥 Utilisateurs</button>
+    <button class="tab-btn"       onclick="switchTab('ca')">📈 Chiffre d'affaires</button>
     <button class="tab-btn"       onclick="switchTab('caisse')">🏦 État de caisse</button>
     <button class="tab-btn"       onclick="switchTab('banque')">🏛 Banque</button>
   </div>
@@ -509,45 +511,47 @@
     </div>
   </div>
 
-  <!-- ── État de caisse ────────────────────────────────────────── -->
-  <div id="tab-caisse" class="tab-panel">
+  <!-- ── Chiffre d'affaires (activité du mois) ───────────────── -->
+  <div id="tab-ca" class="tab-panel">
 
-    <!-- KPI cards -->
-    <div id="caisse-kpis" class="kpi-grid"></div>
-
-    <!-- Sélecteur + actions -->
     <div class="flex-between" style="max-width:900px;margin-bottom:12px;">
-      <div class="card-title" style="margin:0;">🏦 Position de caisse</div>
+      <div class="card-title" style="margin:0;">📈 Chiffre d'affaires et dépenses du mois</div>
       <div style="display:flex;gap:8px;align-items:center;">
-        <button class="btn btn-ghost btn-sm" onclick="openRegDrawer()" style="border-color:var(--purple);color:var(--purple);">⚖️ Régulations</button>
         <input type="month" id="caisse-month" onchange="loadCaisse()" style="width:160px;" />
         <button class="btn btn-ghost btn-sm" onclick="loadCaisse()">↻</button>
       </div>
     </div>
 
-    <!-- Tableau espèces journalier -->
+    <div id="caisse-kpis" class="kpi-grid"></div>
+    <div class="text-muted" style="font-size:11px;max-width:900px;margin:-6px 0 12px;">
+      Vue d'activité : ce que le mois a rapporté et coûté. Les transferts entre comptes (recharge MM, dépôts en banque)
+      ne sont pas des dépenses et n'y figurent pas. Pour savoir ce qu'il y a réellement en caisse, voir l'onglet « État de caisse ».
+    </div>
+
     <div class="card" style="max-width:900px;">
       <div class="table-wrap">
         <table id="caisse-table">
           <thead>
             <tr>
               <th>Date</th>
-              <th style="text-align:right;color:var(--green);">Entrées espèces</th>
-              <th style="text-align:right;color:var(--red);">Sorties</th>
-              <th style="text-align:right;color:var(--cyan);">Solde du jour</th>
-              <th style="text-align:right;">Solde cumulé</th>
+              <th style="text-align:right;">Chiffre d'affaires</th>
+              <th style="text-align:right;color:var(--green);">Encaissé espèces</th>
+              <th style="text-align:right;color:var(--cyan);">Encaissé MM</th>
+              <th style="text-align:right;color:var(--red);">Dépenses</th>
+              <th style="text-align:right;">Résultat du jour</th>
+              <th style="text-align:right;">Cumul du mois</th>
             </tr>
           </thead>
           <tbody id="caisse-body">
-            <tr><td colspan="5" class="text-muted" style="text-align:center;padding:20px;">Sélectionnez un mois</td></tr>
+            <tr><td colspan="7" class="text-muted" style="text-align:center;padding:20px;">Sélectionnez un mois</td></tr>
           </tbody>
         </table>
       </div>
     </div>
 
-    <!-- Mobile Money & autres règlements -->
+    <!-- Règlements par moyen de paiement -->
     <div id="caisse-mobile-card" class="card hidden" style="max-width:900px;margin-top:12px;">
-      <div class="card-title">📱 Règlements non-espèces</div>
+      <div class="card-title">💳 Règlements hors espèces</div>
       <div id="caisse-mobile-solde" style="margin-bottom:12px;"></div>
       <div class="table-wrap">
         <table>
@@ -558,6 +562,7 @@
               <th style="text-align:right;">Chèque</th>
               <th style="text-align:right;">Virement</th>
               <th style="text-align:right;">Bon cadeau</th>
+              <th style="text-align:right;">Acompte déduit</th>
               <th style="text-align:right;font-weight:700;">Total</th>
             </tr>
           </thead>
@@ -577,6 +582,115 @@
 
   </div>
 
+  <!-- ── État de caisse (trésorerie réelle) ──────────────────── -->
+  <div id="tab-caisse" class="tab-panel">
+
+    <div class="ec-head">
+      <div>
+        <div class="card-title" style="margin:0;">🏦 État de caisse</div>
+        <div class="text-muted" style="font-size:11px;margin-top:2px;">Ce qu'il y a réellement sur chaque compte, ligne par ligne.</div>
+      </div>
+      <div class="ec-head-actions">
+        <label class="ec-asof">Solde au <input type="date" id="ec-asof" onchange="ecRender()" /></label>
+        <button class="btn btn-primary btn-sm" onclick="ecOpenMove()">＋ Mouvement</button>
+        <button class="btn btn-ghost btn-sm" onclick="ecOpenControl()">🧮 Contrôle</button>
+        <button class="btn btn-ghost btn-sm" onclick="ecLoad()" title="Recharger">↻</button>
+      </div>
+    </div>
+
+    <div id="ec-notice" class="ec-notice hidden"></div>
+    <div id="ec-kpis" class="ec-kpis"></div>
+
+    <!-- Filtres -->
+    <div class="card ec-filters">
+      <div class="ec-filter-row">
+        <div class="ec-presets" id="ec-presets">
+          <button class="chip" data-preset="today">Aujourd'hui</button>
+          <button class="chip" data-preset="7d">7 jours</button>
+          <button class="chip" data-preset="month">Ce mois</button>
+          <button class="chip" data-preset="prevmonth">Mois précédent</button>
+          <button class="chip" data-preset="year">Cette année</button>
+          <button class="chip" data-preset="all">Depuis le début</button>
+        </div>
+        <div class="ec-period">
+          <label>Du <input type="date" id="ec-from" onchange="ecRender()" /></label>
+          <label>au <input type="date" id="ec-to" onchange="ecRender()" /></label>
+        </div>
+      </div>
+
+      <div class="ec-filter-row">
+        <div class="ec-group-label">Comptes</div>
+        <div class="ec-toggles" id="ec-accounts"></div>
+        <div class="ec-group-label">Nature</div>
+        <div class="ec-toggles" id="ec-natures"></div>
+      </div>
+
+      <div class="ec-filter-grid">
+        <div class="field"><label>Sens</label>
+          <select id="ec-dir" onchange="ecRender()">
+            <option value="">Entrées et sorties</option>
+            <option value="in">Entrées seulement</option>
+            <option value="out">Sorties seulement</option>
+          </select></div>
+        <div class="field"><label>Catégorie / motif</label><select id="ec-cat" onchange="ecRender()"></select></div>
+        <div class="field"><label>Opérateur</label><select id="ec-op" onchange="ecRender()"></select></div>
+        <div class="field"><label>Statut</label>
+          <select id="ec-status" onchange="ecRender()">
+            <option value="">Tous (sauf rejetés)</option>
+            <option value="validated">Validés seulement</option>
+            <option value="pending">En attente de validation</option>
+          </select></div>
+        <div class="field"><label>Pointage</label>
+          <select id="ec-point" onchange="ecRender()">
+            <option value="">Toutes les lignes</option>
+            <option value="no">Non pointées</option>
+            <option value="yes">Pointées</option>
+          </select></div>
+        <div class="field"><label>Montant min.</label><input type="number" id="ec-min" min="0" oninput="ecRenderSoon()" placeholder="0" /></div>
+        <div class="field"><label>Montant max.</label><input type="number" id="ec-max" min="0" oninput="ecRenderSoon()" placeholder="∞" /></div>
+        <div class="field ec-search"><label>Recherche</label><input type="search" id="ec-q" oninput="ecRenderSoon()" placeholder="Libellé, client, n° ticket, référence…" /></div>
+      </div>
+
+      <div class="ec-filter-row ec-filter-foot">
+        <label class="ec-check"><input type="checkbox" id="ec-hide-transfers" onchange="ecRender()" /> Masquer les transferts internes</label>
+        <div class="ec-group-label">Affichage</div>
+        <select id="ec-group" onchange="ecRender()" style="width:auto;">
+          <option value="detail">Ligne par ligne</option>
+          <option value="day">Regroupé par jour</option>
+          <option value="month">Regroupé par mois</option>
+        </select>
+        <span style="flex:1"></span>
+        <button class="btn btn-ghost btn-sm" onclick="ecResetFilters()">Réinitialiser les filtres</button>
+        <button class="btn btn-ghost btn-sm" onclick="ecExportCsv()">⬇ Export Excel (CSV)</button>
+        <button class="btn btn-ghost btn-sm" onclick="ecPrint()">🖨 Imprimer</button>
+      </div>
+    </div>
+
+    <div id="ec-summary" class="ec-summary"></div>
+
+    <div class="card" style="padding:0;">
+      <div class="table-wrap">
+        <table class="ec-table">
+          <thead id="ec-thead"></thead>
+          <tbody id="ec-body"><tr><td class="text-muted" style="text-align:center;padding:20px;">Chargement…</td></tr></tbody>
+          <tfoot id="ec-foot"></tfoot>
+        </table>
+      </div>
+      <div id="ec-more" class="ec-more hidden"></div>
+    </div>
+
+    <div class="ec-bottom">
+      <div class="card">
+        <div class="card-title">⚠️ Points à vérifier</div>
+        <div id="ec-checks" style="font-size:13px;"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">🧮 Contrôles de caisse</div>
+        <div id="ec-controls" style="font-size:13px;"></div>
+      </div>
+    </div>
+
+  </div>
   <!-- ── Banque ─────────────────────────────────────────────────── -->
   <div id="tab-banque" class="tab-panel">
 
@@ -649,54 +763,68 @@
 
 </div>
 
-<!-- ── Régulation Drawer ──────────────────────────────────────── -->
-<div id="reg-backdrop" class="reg-backdrop" onclick="closeRegDrawer()"></div>
-<div id="reg-drawer" class="reg-drawer">
+<!-- ── Mouvement de trésorerie (transfert, ajustement…) ─────── -->
+<div id="ec-backdrop" class="reg-backdrop" onclick="ecCloseDrawers()"></div>
+<div id="ec-move-drawer" class="reg-drawer">
   <div class="flex-between" style="margin-bottom:4px;">
-    <div style="font-size:15px;font-weight:700;">⚖️ Régulations de caisse</div>
-    <button class="btn btn-ghost btn-sm" onclick="closeRegDrawer()">✕</button>
+    <div style="font-size:15px;font-weight:700;" id="ec-move-title">＋ Mouvement de trésorerie</div>
+    <button class="btn btn-ghost btn-sm" onclick="ecCloseDrawers()">✕</button>
   </div>
-  <div style="font-size:12px;color:var(--text3);margin-bottom:8px;">Fond de caisse, écarts, retraits non comptabilisés…</div>
-
-  <!-- Formulaire -->
-  <div class="card" style="padding:14px;flex-shrink:0;">
-    <div class="card-title" id="reg-form-title" style="font-size:12px;margin-bottom:10px;">Nouvelle régulation</div>
-    <input type="hidden" id="reg-id" />
-    <div class="field"><label>Date *</label><input type="date" id="reg-date" /></div>
-    <div class="field">
-      <label>Type</label>
-      <select id="reg-type">
-        <option value="fond_caisse">💰 Fond de caisse</option>
-        <option value="ecart">⚖️ Écart de caisse</option>
-        <option value="retrait">💸 Retrait espèces</option>
-        <option value="depot">📥 Dépôt espèces</option>
-        <option value="autre">📋 Autre</option>
-      </select>
+  <div style="font-size:12px;color:var(--text3);">
+    Transferts entre caisse, Mobile Money et banque, soldes d'ouverture, écarts constatés…
+    Les ventes, acomptes et dépenses se saisissent toujours dans leurs écrans habituels.
+  </div>
+  <div class="card" style="padding:14px;">
+    <div class="field"><label>Type *</label>
+      <select id="ec-m-type" onchange="ecMoveTypeChanged()"></select></div>
+    <div id="ec-m-transfer" class="field-row">
+      <div class="field"><label>De *</label><select id="ec-m-from"></select></div>
+      <div class="field"><label>Vers *</label><select id="ec-m-to"></select></div>
     </div>
-    <div class="field"><label>Libellé *</label><input type="text" id="reg-label" placeholder="Ex: Ouverture caisse, Écart −500…" /></div>
-    <div class="field"><label>Montant (FCFA) *</label><input type="number" id="reg-amount" min="0" /></div>
-    <div class="field">
-      <label>Sens</label>
-      <div style="display:flex;gap:8px;margin-top:4px;">
-        <label class="role-radio checked" id="reg-dir-credit" onclick="setRegDir('credit')">
-          <input type="radio" name="reg-dir" value="credit" style="display:none;" /> ↑ Entrée
-        </label>
-        <label class="role-radio" id="reg-dir-debit" onclick="setRegDir('debit')">
-          <input type="radio" name="reg-dir" value="debit" style="display:none;" /> ↓ Sortie
-        </label>
-      </div>
+    <div id="ec-m-single" class="field-row">
+      <div class="field"><label>Compte *</label><select id="ec-m-account"></select></div>
+      <div class="field"><label>Sens *</label>
+        <select id="ec-m-dir">
+          <option value="credit">↑ Entrée</option>
+          <option value="debit">↓ Sortie</option>
+        </select></div>
     </div>
-    <div class="field"><label>Note</label><textarea id="reg-desc" rows="2"></textarea></div>
+    <div class="field-row">
+      <div class="field"><label>Date *</label><input type="date" id="ec-m-date" /></div>
+      <div class="field"><label>Montant (FCFA) *</label><input type="number" id="ec-m-amount" min="1" /></div>
+    </div>
+    <div class="field"><label>Libellé *</label><input type="text" id="ec-m-label" placeholder="Ex : Retrait banque pour la caisse" /></div>
+    <div class="field"><label>Référence</label><input type="text" id="ec-m-ref" placeholder="N° bordereau, ID transaction Wave…" /></div>
+    <div class="field"><label>Note</label><textarea id="ec-m-desc" rows="2"></textarea></div>
+    <div id="ec-m-warn" class="text-muted" style="font-size:11px;margin-bottom:10px;"></div>
     <div style="display:flex;gap:8px;">
-      <button class="btn btn-primary" onclick="saveRegulation()" style="flex:1" id="reg-save-btn">Enregistrer</button>
-      <button class="btn btn-ghost" onclick="cancelRegEdit()" id="reg-cancel-btn" style="display:none;">Annuler</button>
+      <button class="btn btn-primary" style="flex:1" id="ec-m-save" onclick="ecSaveMove()">Enregistrer</button>
+      <button class="btn btn-danger hidden" id="ec-m-delete" onclick="ecDeleteMove()">🗑 Supprimer</button>
     </div>
   </div>
+</div>
 
-  <!-- Liste -->
-  <div style="flex:1;">
-    <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:8px;">Régulations du mois sélectionné</div>
-    <div id="reg-list"><div class="text-muted" style="font-size:12px;">Aucune donnée</div></div>
+<!-- ── Contrôle de caisse (comptage) ────────────────────────── -->
+<div id="ec-control-drawer" class="reg-drawer">
+  <div class="flex-between" style="margin-bottom:4px;">
+    <div style="font-size:15px;font-weight:700;">🧮 Contrôle de caisse</div>
+    <button class="btn btn-ghost btn-sm" onclick="ecCloseDrawers()">✕</button>
+  </div>
+  <div style="font-size:12px;color:var(--text3);">
+    Saisissez ce que vous avez réellement compté (billets en caisse, solde affiché par Wave / Orange Money, relevé bancaire).
+    L'écart avec le solde théorique est enregistré dans l'historique des contrôles.
+  </div>
+  <div class="card" style="padding:14px;">
+    <div class="field-row">
+      <div class="field"><label>Date *</label><input type="date" id="ec-c-date" onchange="ecControlPreview()" /></div>
+      <div class="field"><label>Compte *</label><select id="ec-c-account" onchange="ecControlPreview()"></select></div>
+    </div>
+    <div class="field"><label>Montant compté (FCFA) *</label><input type="number" id="ec-c-amount" min="0" oninput="ecControlPreview()" /></div>
+    <div id="ec-c-preview" class="ec-c-preview"></div>
+    <div class="field"><label>Note</label><textarea id="ec-c-note" rows="2" placeholder="Qui a compté, observations…"></textarea></div>
+    <label class="ec-check" style="margin-bottom:12px;"><input type="checkbox" id="ec-c-book" />
+      Passer l'écart en ajustement (le solde théorique s'aligne sur le comptage)</label>
+    <button class="btn btn-primary btn-full" onclick="ecSaveControl()">Enregistrer le contrôle</button>
   </div>
 </div>
 
@@ -750,7 +878,8 @@ function switchTab(name) {
   document.getElementById('tab-' + name).classList.add('active');
   event.target.classList.add('active');
   if (name === 'users')   loadUsers();
-  if (name === 'caisse')  initCaisse();
+  if (name === 'ca')      initCaisse();
+  if (name === 'caisse')  initEtatCaisse();
   if (name === 'banque')  initBanque();
 }
 
@@ -1559,39 +1688,25 @@ async function deleteProduct(id) {
   loadProducts();
 }
 
-// ── État de caisse ────────────────────────────────────────────
-let editingRegId = null;
-let selectedRegDir = 'credit';
+// ── Chiffre d'affaires (activité du mois) ─────────────────────
+// Ce n'est pas un état de caisse : on mesure ce que le mois a rapporté
+// (CA des tickets) et coûté (dépenses réelles). Les transferts entre
+// comptes (recharge MM, dépôts en banque) ne sont pas des dépenses.
+// L'argent réellement disponible est dans l'onglet « État de caisse ».
+const CA_TRANSFER_CATS = ['rechargement_mm', 'depot_especes', 'depot_mobile_money', 'banque'];
+const CA_BANK_EXPENSE_CATS = ['frais_bancaires', 'autre'];
 
-const REG_TYPE_LABELS = {
-  fond_caisse: '💰 Fond de caisse',
-  ecart:       '⚖️ Écart de caisse',
-  retrait:     '💸 Retrait espèces',
-  depot:       '📥 Dépôt espèces',
-  autre:       '📋 Autre',
-};
-
-function openRegDrawer() {
-  document.getElementById('reg-backdrop').classList.add('open');
-  document.getElementById('reg-drawer').classList.add('open');
-  const elDate = document.getElementById('reg-date');
-  if (!elDate.value) elDate.value = new Date().toISOString().slice(0,10);
-}
-function closeRegDrawer() {
-  document.getElementById('reg-backdrop').classList.remove('open');
-  document.getElementById('reg-drawer').classList.remove('open');
-}
-
-function renderKPIs({ soldeCaisse, soldeMM, totalEspeces, totMob, totalDepTotal, totalDepEsp, totalDepMM }) {
-  // Solde total = (espèces encaissées + MM encaissé) − toutes dépenses
-  const soldeTotal = (totalEspeces + totMob) - totalDepTotal;
+function renderKPIs({ ca, encEsp, encMM, encAutres, depenses, bankRecettes }) {
+  const resultat = ca - depenses;
   const kpis = [
-    { label: 'Solde total',        value: fmt(soldeTotal),  color: 'var(--yellow)', border: 'var(--yellow)' },
-    { label: 'Solde caisse',       value: fmt(soldeCaisse), color: soldeCaisse >= 0 ? 'var(--green)' : 'var(--red)', border: 'var(--green)' },
-    { label: 'Solde Mobile Money', value: fmt(soldeMM),     color: soldeMM     >= 0 ? 'var(--cyan)'  : 'var(--red)', border: 'var(--cyan)'  },
-    { label: 'Dépenses espèces',   value: fmt(totalDepEsp), color: 'var(--red)',    border: 'var(--red)'    },
-    { label: 'Dépenses Mobile M.', value: fmt(totalDepMM),  color: 'var(--red)',    border: 'var(--border2)'},
+    { label: 'Chiffre d\'affaires', value: fmt(ca),        color: 'var(--yellow)', border: 'var(--yellow)' },
+    { label: 'Encaissé espèces',   value: fmt(encEsp),    color: 'var(--green)',  border: 'var(--green)' },
+    { label: 'Encaissé Mobile M.', value: fmt(encMM),     color: 'var(--cyan)',   border: 'var(--cyan)' },
+    { label: 'Autres règlements',  value: fmt(encAutres), color: 'var(--text)',   border: 'var(--border2)' },
+    { label: 'Dépenses',           value: fmt(depenses),  color: 'var(--red)',    border: 'var(--red)' },
+    { label: 'Résultat du mois',   value: fmt(resultat),  color: resultat >= 0 ? 'var(--green)' : 'var(--red)', border: resultat >= 0 ? 'var(--green)' : 'var(--red)' },
   ];
+  if (bankRecettes) kpis.push({ label: 'Recettes banque hors tickets', value: fmt(bankRecettes), color: 'var(--purple)', border: 'var(--purple)' });
   document.getElementById('caisse-kpis').innerHTML = kpis.map(k => `
     <div class="kpi-card" style="border-left-color:${k.border};">
       <div class="kpi-label">${k.label}</div>
@@ -1610,286 +1725,159 @@ async function loadCaisse() {
   if (!month) return;
   const [y, m] = month.split('-');
   const from = `${y}-${m}-01`;
-  const to   = new Date(y, m, 0).toISOString().slice(0,10);
+  const to   = `${y}-${m}-${String(new Date(+y, +m, 0).getDate()).padStart(2,'0')}`;
 
-  const [tRes, eRes, bRes, rRes] = await Promise.all([
-    sb.from('tickets').select('session_date,total_price_xof,payment_especes_xof,payment_mobile_xof,payment_voucher_xof,payment_cheque_xof,payment_virement_xof,ticket_number,room_name,time_slot,num_players')
-      .gte('session_date', from).lte('session_date', to).eq('status','confirmed').order('session_date'),
+  const [tRes, eRes, bRes] = await Promise.all([
+    sb.from('tickets').select('session_date,total_price_xof,payment_especes_xof,payment_mobile_xof,payment_voucher_xof,payment_cheque_xof,payment_virement_xof,payment_advance_xof,ticket_number,room_name,time_slot,num_players,client_name')
+      .gte('session_date', from).lte('session_date', to).eq('status','confirmed').order('session_date').range(0, 4999),
     sb.from('expenses').select('date,amount_xof,category,description,status,operator_name,payment_method')
-      .gte('date', from).lte('date', to).neq('status','rejected').order('date'),
-    sb.from('bank_transactions').select('date,type,amount_xof,category,description')
-      .gte('date', from).lte('date', to).order('date'),
-    sb.from('caisse_regulations').select('*')
+      .gte('date', from).lte('date', to).neq('status','rejected').order('date').range(0, 4999),
+    sb.from('bank_transactions').select('date,type,amount_xof,category,description,ticket_id,expense_id')
       .gte('date', from).lte('date', to).order('date'),
   ]);
 
-  const tickets     = tRes.data || [];
-  const expenses    = eRes.data || [];
-  const bankTx      = bRes.data || [];
-  const regulations = rRes.data || [];
+  const tickets  = tRes.data || [];
+  const expenses = (eRes.data || []).filter(e => !CA_TRANSFER_CATS.includes(e.category));
+  const bankTx   = bRes.data || [];
+  const bankExp  = bankTx.filter(b => b.type === 'debit' && !b.expense_id && CA_BANK_EXPENSE_CATS.includes(b.category));
+  const bankRec  = bankTx.filter(b => b.type === 'credit' && !b.ticket_id && !b.expense_id && ['cheque','virement'].includes(b.category));
 
-  // ── Tableau principal espèces ─────────────────────────────────
   const days = {};
-  const addDay = d => { if (!days[d]) days[d] = { tickets:[], expenses:[], bankDebits:[], regulations:[] }; };
+  const addDay = d => (days[d] = days[d] || { tickets: [], expenses: [], bankExp: [] });
+  tickets.forEach(t  => addDay(t.session_date).tickets.push(t));
+  expenses.forEach(e => addDay(e.date).expenses.push(e));
+  bankExp.forEach(b  => addDay(b.date).bankExp.push(b));
 
-  tickets.forEach(t     => { addDay(t.session_date); days[t.session_date].tickets.push(t); });
-  expenses.forEach(e    => { addDay(e.date); days[e.date].expenses.push(e); });
-  bankTx.filter(b => b.type === 'debit' && b.category === 'depot_especes')
-        .forEach(b      => { addDay(b.date); days[b.date].bankDebits.push(b); });
-  regulations.forEach(r => { addDay(r.date); days[r.date].regulations.push(r); });
-
-  // Agrégats dépenses par moyen de paiement (sur tout le mois)
-  const totalDepEsp   = expenses.filter(e => !e.payment_method || e.payment_method === 'especes').reduce((s,e) => s + (e.amount_xof||0), 0);
-  const totalDepMM    = expenses.filter(e => e.payment_method === 'mobile_money').reduce((s,e) => s + (e.amount_xof||0), 0);
-  const totalDepTotal = expenses.reduce((s,e) => s + (e.amount_xof||0), 0);
-
-  const sorted = Object.keys(days).sort();
-  let cumul = 0;
-  let totalEntrees = 0, totalSorties = 0;
-  let totalEspeces = 0, totalBankDebits = 0;
-
-  const rows = sorted.map(date => {
+  let cumul = 0, totCA = 0, totEsp = 0, totMMd = 0, totDep = 0;
+  const rows = Object.keys(days).sort().map(date => {
     const d = days[date];
-    const especes    = d.tickets.reduce((s,t) => s + (t.payment_especes_xof||0), 0);
-    const regCredit  = d.regulations.filter(r => r.direction === 'credit').reduce((s,r) => s + (r.amount_xof||0), 0);
-    const regDebit   = d.regulations.filter(r => r.direction === 'debit').reduce((s,r)  => s + (r.amount_xof||0), 0);
-    // Seules les dépenses espèces sortent de la caisse
-    const dayDepEsp  = d.expenses.filter(e => !e.payment_method || e.payment_method === 'especes').reduce((s,e) => s + (e.amount_xof||0), 0);
-    const dayBank    = d.bankDebits.reduce((s,b) => s + (b.amount_xof||0), 0);
-    const entrees    = especes + regCredit;
-    const sorties    = dayDepEsp + dayBank + regDebit;
-    const soldeJour  = entrees - sorties;
-    cumul += soldeJour;
-    totalEntrees += entrees; totalSorties += sorties;
-    totalEspeces += especes; totalBankDebits += dayBank;
-    const cumulColor = cumul >= 0 ? 'var(--green)' : 'var(--red)';
-    const jourColor  = soldeJour >= 0 ? 'var(--green)' : 'var(--red)';
-    const hasReg     = d.regulations.length > 0;
+    const ca  = d.tickets.reduce((s,t) => s + (t.total_price_xof||0), 0);
+    const esp = d.tickets.reduce((s,t) => s + (t.payment_especes_xof||0), 0);
+    const mm  = d.tickets.reduce((s,t) => s + (t.payment_mobile_xof||0), 0);
+    const dep = d.expenses.reduce((s,e) => s + (e.amount_xof||0), 0) + d.bankExp.reduce((s,b) => s + (b.amount_xof||0), 0);
+    const res = ca - dep;
+    cumul += res; totCA += ca; totEsp += esp; totMMd += mm; totDep += dep;
+    const c = v => v >= 0 ? 'var(--green)' : 'var(--red)';
     return `<tr style="cursor:pointer;" onclick="showCaisseDetail('${date}')" title="Voir le détail">
-      <td>${formatDate(date)}${hasReg ? ' <span style="color:var(--cyan);font-size:10px;" title="Régulation">⚖</span>' : ''}</td>
-      <td style="text-align:right;color:var(--green);font-weight:600;">${fmt(entrees)}</td>
-      <td style="text-align:right;color:var(--red);font-weight:600;">${fmt(sorties)}</td>
-      <td style="text-align:right;color:${jourColor};font-weight:700;">${soldeJour>=0?'+':''}${fmt(soldeJour)}</td>
-      <td style="text-align:right;color:${cumulColor};font-weight:700;">${fmt(cumul)}</td>
+      <td>${formatDate(date)}</td>
+      <td style="text-align:right;font-weight:600;">${fmt(ca)}</td>
+      <td style="text-align:right;color:var(--green);">${esp ? fmt(esp) : '—'}</td>
+      <td style="text-align:right;color:var(--cyan);">${mm ? fmt(mm) : '—'}</td>
+      <td style="text-align:right;color:var(--red);">${dep ? fmt(dep) : '—'}</td>
+      <td style="text-align:right;color:${c(res)};font-weight:700;">${res>=0?'+':''}${fmt(res)}</td>
+      <td style="text-align:right;color:${c(cumul)};font-weight:700;">${fmt(cumul)}</td>
     </tr>`;
   });
 
   document.getElementById('caisse-body').innerHTML = rows.length
     ? rows.join('') + `<tr style="border-top:2px solid var(--border2);">
         <td style="font-weight:700;">TOTAL</td>
-        <td style="text-align:right;color:var(--green);font-weight:700;">${fmt(totalEntrees)}</td>
-        <td style="text-align:right;color:var(--red);font-weight:700;">${fmt(totalSorties)}</td>
-        <td style="text-align:right;font-weight:700;">${fmt(totalEntrees-totalSorties)}</td>
+        <td style="text-align:right;font-weight:700;">${fmt(totCA)}</td>
+        <td style="text-align:right;color:var(--green);font-weight:700;">${fmt(totEsp)}</td>
+        <td style="text-align:right;color:var(--cyan);font-weight:700;">${fmt(totMMd)}</td>
+        <td style="text-align:right;color:var(--red);font-weight:700;">${fmt(totDep)}</td>
+        <td style="text-align:right;font-weight:700;">${fmt(totCA - totDep)}</td>
         <td></td>
       </tr>`
-    : '<tr><td colspan="5" class="text-muted" style="text-align:center;padding:20px;">Aucune donnée ce mois</td></tr>';
+    : '<tr><td colspan="7" class="text-muted" style="text-align:center;padding:20px;">Aucune donnée ce mois</td></tr>';
 
-  // ── Tableau Mobile Money & règlements non-espèces ─────────────
+  // ── Règlements hors espèces ──────────────────────────────────
   const mDays = {};
-  let totMob=0, totChq=0, totVir=0, totBon=0;
+  let totMob=0, totChq=0, totVir=0, totBon=0, totAdv=0;
   tickets.forEach(t => {
     const mob = t.payment_mobile_xof   || 0;
     const chq = t.payment_cheque_xof   || 0;
     const vir = t.payment_virement_xof || 0;
     const bon = t.payment_voucher_xof  || 0;
-    totMob+=mob; totChq+=chq; totVir+=vir; totBon+=bon;
-    if (mob + chq + vir + bon === 0) return;
-    if (!mDays[t.session_date]) mDays[t.session_date] = { mob:0, chq:0, vir:0, bon:0 };
-    mDays[t.session_date].mob += mob;
-    mDays[t.session_date].chq += chq;
-    mDays[t.session_date].vir += vir;
-    mDays[t.session_date].bon += bon;
+    const adv = t.payment_advance_xof  || 0;
+    totMob+=mob; totChq+=chq; totVir+=vir; totBon+=bon; totAdv+=adv;
+    if (mob + chq + vir + bon + adv === 0) return;
+    const d = (mDays[t.session_date] = mDays[t.session_date] || { mob:0, chq:0, vir:0, bon:0, adv:0 });
+    d.mob += mob; d.chq += chq; d.vir += vir; d.bon += bon; d.adv += adv;
   });
 
   const mSorted = Object.keys(mDays).sort();
+  const dash = v => v ? fmt(v) : '—';
   if (mSorted.length) {
     document.getElementById('caisse-mobile-card').classList.remove('hidden');
     const mRows = mSorted.map(date => {
       const d = mDays[date];
-      const tot = d.mob+d.chq+d.vir+d.bon;
       return `<tr>
         <td>${formatDate(date)}</td>
-        <td style="text-align:right;color:var(--cyan);font-weight:600;">${d.mob?fmt(d.mob):'—'}</td>
-        <td style="text-align:right;">${d.chq?fmt(d.chq):'—'}</td>
-        <td style="text-align:right;">${d.vir?fmt(d.vir):'—'}</td>
-        <td style="text-align:right;">${d.bon?fmt(d.bon):'—'}</td>
-        <td style="text-align:right;font-weight:700;">${fmt(tot)}</td>
+        <td style="text-align:right;color:var(--cyan);font-weight:600;">${dash(d.mob)}</td>
+        <td style="text-align:right;">${dash(d.chq)}</td>
+        <td style="text-align:right;">${dash(d.vir)}</td>
+        <td style="text-align:right;">${dash(d.bon)}</td>
+        <td style="text-align:right;">${dash(d.adv)}</td>
+        <td style="text-align:right;font-weight:700;">${fmt(d.mob+d.chq+d.vir+d.bon+d.adv)}</td>
       </tr>`;
     });
-    const totAll = totMob+totChq+totVir+totBon;
+    const totAll = totMob+totChq+totVir+totBon+totAdv;
     document.getElementById('caisse-mobile-body').innerHTML = mRows.join('') + `
       <tr style="border-top:2px solid var(--border2);">
         <td style="font-weight:700;">TOTAL</td>
         <td style="text-align:right;color:var(--cyan);font-weight:700;">${fmt(totMob)}</td>
-        <td style="text-align:right;font-weight:700;">${totChq?fmt(totChq):'—'}</td>
-        <td style="text-align:right;font-weight:700;">${totVir?fmt(totVir):'—'}</td>
-        <td style="text-align:right;font-weight:700;">${totBon?fmt(totBon):'—'}</td>
+        <td style="text-align:right;font-weight:700;">${dash(totChq)}</td>
+        <td style="text-align:right;font-weight:700;">${dash(totVir)}</td>
+        <td style="text-align:right;font-weight:700;">${dash(totBon)}</td>
+        <td style="text-align:right;font-weight:700;">${dash(totAdv)}</td>
         <td style="text-align:right;font-weight:700;">${fmt(totAll)}</td>
       </tr>`;
     document.getElementById('caisse-mobile-solde').innerHTML = `
-      <div style="display:flex;gap:16px;flex-wrap:wrap;padding:10px 14px;background:var(--bg3);border-radius:8px;">
-        ${totMob?`<div><div class="kpi-label">Mobile Money</div><div style="font-size:15px;font-weight:700;color:var(--cyan);">${fmt(totMob)}</div></div>`:''}
-        ${totChq?`<div><div class="kpi-label">Chèques</div><div style="font-size:15px;font-weight:700;">${fmt(totChq)}</div></div>`:''}
-        ${totVir?`<div><div class="kpi-label">Virements</div><div style="font-size:15px;font-weight:700;">${fmt(totVir)}</div></div>`:''}
-        ${totBon?`<div><div class="kpi-label">Bons cadeaux</div><div style="font-size:15px;font-weight:700;">${fmt(totBon)}</div></div>`:''}
-        <div><div class="kpi-label">Total non-espèces</div><div style="font-size:16px;font-weight:700;color:var(--purple);">${fmt(totAll)}</div></div>
-      </div>`;
+      <div class="text-muted" style="font-size:11px;">Les acomptes déduits ont été encaissés le jour du versement de l'acompte (voir État de caisse).</div>`;
   } else {
     document.getElementById('caisse-mobile-card').classList.add('hidden');
   }
 
-  // ── KPI cards ─────────────────────────────────────────────────
-  const soldeMM = totMob - totalDepMM;
-  renderKPIs({ soldeCaisse: cumul, soldeMM, totalEspeces, totMob, totalDepTotal, totalDepEsp, totalDepMM });
-
-  renderRegList(regulations);
-  window._caisseData = { tickets, expenses, bankTx, regulations };
+  renderKPIs({
+    ca: totCA, encEsp: totEsp, encMM: totMob, encAutres: totChq + totVir + totBon + totAdv,
+    depenses: totDep, bankRecettes: bankRec.reduce((s,b) => s + (b.amount_xof||0), 0),
+  });
+  window._caisseData = { tickets, expenses, bankExp };
 }
 
 function showCaisseDetail(date) {
-  const { tickets, expenses, bankTx, regulations } = window._caisseData || {};
+  const { tickets, expenses, bankExp } = window._caisseData || {};
   if (!tickets) return;
   const dayT = tickets.filter(t => t.session_date === date);
   const dayE = expenses.filter(e => e.date === date);
-  const dayB = bankTx.filter(b => b.date === date);
-  const dayR = (regulations || []).filter(r => r.date === date);
+  const dayB = bankExp.filter(b => b.date === date);
 
   const tRows = dayT.map(t => `<tr>
-    <td>${t.time_slot}</td><td>${escHtml(t.room_name||'—')}</td><td>${t.num_players}j</td>
-    <td style="text-align:right;font-weight:600;color:var(--green);">${fmt(t.payment_especes_xof)}</td>
+    <td>${escHtml(t.time_slot||'—')}</td><td>${escHtml(t.room_name||'—')}</td><td>${t.num_players||''}</td>
+    <td style="text-align:right;font-weight:600;">${fmt(t.total_price_xof)}</td>
     <td style="font-size:10px;color:var(--text3);">${[
+      t.payment_especes_xof>0?`💵 Esp:${fmt(t.payment_especes_xof)}`:'',
       t.payment_mobile_xof>0?`📱 Mob:${fmt(t.payment_mobile_xof)}`:'',
       t.payment_cheque_xof>0?`📄 Chq:${fmt(t.payment_cheque_xof)}`:'',
       t.payment_virement_xof>0?`💸 Vir:${fmt(t.payment_virement_xof)}`:'',
       t.payment_voucher_xof>0?`🎁 Bon:${fmt(t.payment_voucher_xof)}`:'',
+      t.payment_advance_xof>0?`🧾 Acompte:${fmt(t.payment_advance_xof)}`:'',
     ].filter(Boolean).join(' ')}</td>
   </tr>`).join('');
 
   const eRows = dayE.map(e => {
     const cat = ENIGMA_CONFIG.expenseCategories.find(c=>c.value===e.category);
     return `<tr>
-      <td>${cat?cat.label:e.category}</td>
+      <td>${cat?cat.label:escHtml(e.category)}</td>
       <td>${escHtml(e.description)}</td>
+      <td style="font-size:11px;">${e.payment_method==='mobile_money'?'📱 MM':'💵 Caisse'}</td>
       <td style="text-align:right;font-weight:600;color:var(--red);">${fmt(e.amount_xof)}</td>
       <td><span class="badge ${e.status==='validated'?'badge-green':'badge-yellow'}">${e.status==='validated'?'Validée':'En attente'}</span></td>
     </tr>`;
-  }).join('');
-
-  const bRows = dayB.map(b => `<tr>
-    <td>${escHtml(b.description||b.category)}</td>
-    <td style="text-align:right;font-weight:600;color:var(--red);">${fmt(b.amount_xof)}</td>
-    <td style="font-size:10px;color:var(--text3);">Dépôt banque</td>
-  </tr>`).join('');
-
-  const rRows = dayR.map(r => `<tr>
-    <td>${REG_TYPE_LABELS[r.type]||r.type}</td>
-    <td>${escHtml(r.label)}</td>
-    <td style="text-align:right;font-weight:600;color:${r.direction==='credit'?'var(--green)':'var(--red)'};">
-      ${r.direction==='credit'?'+':'−'}${fmt(r.amount_xof)}
-    </td>
-    <td style="font-size:11px;color:var(--text3);">${escHtml(r.description||'')}</td>
-  </tr>`).join('');
+  }).concat(dayB.map(b => `<tr>
+      <td>🏛 Banque</td><td>${escHtml(b.description||b.category)}</td><td style="font-size:11px;">🏛 Banque</td>
+      <td style="text-align:right;font-weight:600;color:var(--red);">${fmt(b.amount_xof)}</td><td></td>
+    </tr>`)).join('');
 
   document.getElementById('caisse-detail-title').textContent = `Détail du ${formatDate(date)}`;
   document.getElementById('caisse-detail-content').innerHTML = `
-    <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:8px;">Sessions encaissées</div>
-    ${dayT.length ? `<div class="table-wrap"><table><thead><tr><th>Heure</th><th>Salle</th><th>Jrs</th><th>Espèces</th><th>Autre règlement</th></tr></thead><tbody>${tRows}</tbody></table></div>` : '<div class="text-muted" style="font-size:12px;margin-bottom:12px;">Aucune session</div>'}
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:8px;">Sessions</div>
+    ${dayT.length ? `<div class="table-wrap"><table><thead><tr><th>Heure</th><th>Salle</th><th>Jrs</th><th style="text-align:right;">Montant</th><th>Règlement</th></tr></thead><tbody>${tRows}</tbody></table></div>` : '<div class="text-muted" style="font-size:12px;margin-bottom:12px;">Aucune session</div>'}
     <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);margin:12px 0 8px;">Dépenses</div>
-    ${dayE.length ? `<div class="table-wrap"><table><thead><tr><th>Catégorie</th><th>Description</th><th>Montant</th><th>Statut</th></tr></thead><tbody>${eRows}</tbody></table></div>` : '<div class="text-muted" style="font-size:12px;margin-bottom:12px;">Aucune dépense</div>'}
-    ${dayB.length ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);margin:12px 0 8px;">Dépôts banque</div><div class="table-wrap"><table><thead><tr><th>Motif</th><th>Montant</th><th></th></tr></thead><tbody>${bRows}</tbody></table></div>` : ''}
-    ${dayR.length ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);margin:12px 0 8px;">Régulations</div><div class="table-wrap"><table><thead><tr><th>Type</th><th>Libellé</th><th>Montant</th><th>Note</th></tr></thead><tbody>${rRows}</tbody></table></div>` : ''}`;
+    ${eRows ? `<div class="table-wrap"><table><thead><tr><th>Catégorie</th><th>Description</th><th>Payé par</th><th style="text-align:right;">Montant</th><th>Statut</th></tr></thead><tbody>${eRows}</tbody></table></div>` : '<div class="text-muted" style="font-size:12px;margin-bottom:12px;">Aucune dépense</div>'}`;
   document.getElementById('caisse-detail').classList.remove('hidden');
   document.getElementById('caisse-detail').scrollIntoView({ behavior: 'smooth' });
-}
-
-// ── Régulations de caisse ─────────────────────────────────────
-function renderRegList(regs) {
-  const el = document.getElementById('reg-list');
-  if (!regs || !regs.length) {
-    el.innerHTML = '<div class="text-muted" style="font-size:12px;">Aucune régulation ce mois</div>';
-    return;
-  }
-  el.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>Date</th><th>Type</th><th>Libellé</th><th>Sens</th><th style="text-align:right;">Montant</th><th></th></tr></thead>
-    <tbody>${regs.map(r => `<tr>
-      <td style="font-size:12px;">${formatDate(r.date)}</td>
-      <td style="font-size:12px;">${REG_TYPE_LABELS[r.type]||r.type}</td>
-      <td style="font-size:12px;">${escHtml(r.label)}</td>
-      <td style="font-size:12px;color:${r.direction==='credit'?'var(--green)':'var(--red)'};">${r.direction==='credit'?'↑ Entrée':'↓ Sortie'}</td>
-      <td style="text-align:right;font-weight:600;color:${r.direction==='credit'?'var(--green)':'var(--red)'};">${fmt(r.amount_xof)}</td>
-      <td style="white-space:nowrap;">
-        <button class="btn btn-ghost btn-sm" onclick="editReg('${r.id}')">✏️</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteReg('${r.id}')">🗑</button>
-      </td>
-    </tr>`).join('')}</tbody>
-  </table></div>`;
-}
-
-function setRegDir(dir) {
-  selectedRegDir = dir;
-  document.getElementById('reg-dir-credit').classList.toggle('checked', dir === 'credit');
-  document.getElementById('reg-dir-debit').classList.toggle('checked', dir === 'debit');
-}
-
-function editReg(id) {
-  const regs = window._caisseData?.regulations || [];
-  const r = regs.find(x => x.id === id);
-  if (!r) return;
-  editingRegId = id;
-  document.getElementById('reg-id').value     = id;
-  document.getElementById('reg-date').value   = r.date;
-  document.getElementById('reg-type').value   = r.type;
-  document.getElementById('reg-label').value  = r.label;
-  document.getElementById('reg-amount').value = r.amount_xof;
-  document.getElementById('reg-desc').value   = r.description || '';
-  setRegDir(r.direction);
-  document.getElementById('reg-form-title').textContent   = 'Modifier la régulation';
-  document.getElementById('reg-save-btn').textContent     = 'Mettre à jour';
-  document.getElementById('reg-cancel-btn').style.display = '';
-}
-
-function cancelRegEdit() {
-  editingRegId = null;
-  document.getElementById('reg-id').value     = '';
-  document.getElementById('reg-date').value   = new Date().toISOString().slice(0,10);
-  document.getElementById('reg-type').value   = 'fond_caisse';
-  document.getElementById('reg-label').value  = '';
-  document.getElementById('reg-amount').value = '';
-  document.getElementById('reg-desc').value   = '';
-  setRegDir('credit');
-  document.getElementById('reg-form-title').textContent   = 'Nouvelle régulation';
-  document.getElementById('reg-save-btn').textContent     = 'Enregistrer';
-  document.getElementById('reg-cancel-btn').style.display = 'none';
-}
-
-async function saveRegulation() {
-  const date   = document.getElementById('reg-date').value;
-  const type   = document.getElementById('reg-type').value;
-  const label  = document.getElementById('reg-label').value.trim();
-  const amount = parseInt(document.getElementById('reg-amount').value) || 0;
-  const desc   = document.getElementById('reg-desc').value.trim();
-  if (!date)   return toast('Date requise', 'err');
-  if (!label)  return toast('Libellé requis', 'err');
-  if (!amount) return toast('Montant requis', 'err');
-  const payload = { date, type, label, amount_xof: amount, direction: selectedRegDir, description: desc, created_by: currentUser?.email };
-  let error;
-  if (editingRegId) {
-    ({ error } = await sb.from('caisse_regulations').update(payload).eq('id', editingRegId));
-  } else {
-    ({ error } = await sb.from('caisse_regulations').insert([payload]));
-  }
-  if (error) return toast('Erreur : ' + error.message, 'err');
-  toast(editingRegId ? 'Régulation mise à jour' : 'Régulation enregistrée', 'ok');
-  cancelRegEdit();
-  loadCaisse();
-}
-
-async function deleteReg(id) {
-  if (!confirm('Supprimer cette régulation ?')) return;
-  const { error } = await sb.from('caisse_regulations').delete().eq('id', id);
-  if (error) return toast('Erreur suppression', 'err');
-  toast('Régulation supprimée', 'ok');
-  loadCaisse();
 }
 
 // ── Banque ────────────────────────────────────────────────────
@@ -2294,5 +2282,7 @@ function toast(msg, type='info') {
   setTimeout(()=>t.remove(),3500);
 }
 </script>
+<script src="shared/tresorerie.js"></script>
+<script src="shared/etat-caisse.js"></script>
 </body>
 </html>
