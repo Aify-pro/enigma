@@ -593,7 +593,7 @@
       <div class="ec-head-actions">
         <label class="ec-asof">Solde au <input type="date" id="ec-asof" onchange="ecRender()" /></label>
         <button class="btn btn-primary btn-sm" onclick="ecOpenMove()">＋ Mouvement</button>
-        <button class="btn btn-ghost btn-sm" onclick="ecOpenControl()">🧮 Contrôle</button>
+        <button class="btn btn-ghost btn-sm" onclick="ecOpenControl()">🧮 Comptage physique</button>
         <button class="btn btn-ghost btn-sm" onclick="ecLoad()" title="Recharger">↻</button>
       </div>
     </div>
@@ -685,7 +685,7 @@
         <div id="ec-checks" style="font-size:13px;"></div>
       </div>
       <div class="card">
-        <div class="card-title">🧮 Contrôles de caisse</div>
+        <div class="card-title">🧮 Inventaires (comptages physiques)</div>
         <div id="ec-controls" style="font-size:13px;"></div>
       </div>
     </div>
@@ -807,24 +807,29 @@
 <!-- ── Contrôle de caisse (comptage) ────────────────────────── -->
 <div id="ec-control-drawer" class="reg-drawer">
   <div class="flex-between" style="margin-bottom:4px;">
-    <div style="font-size:15px;font-weight:700;">🧮 Contrôle de caisse</div>
+    <div style="font-size:15px;font-weight:700;">🧮 Comptage physique — inventaire monétaire</div>
     <button class="btn btn-ghost btn-sm" onclick="ecCloseDrawers()">✕</button>
   </div>
   <div style="font-size:12px;color:var(--text3);">
-    Saisissez ce que vous avez réellement compté (billets en caisse, solde affiché par Wave / Orange Money, relevé bancaire).
-    L'écart avec le solde théorique est enregistré dans l'historique des contrôles.
+    Comptez les billets et les pièces présents dans la caisse, puis relevez le solde affiché par Wave / Orange Money
+    et le solde du relevé bancaire. L'écart avec le solde théorique est enregistré. Un inventaire est exigé chaque semaine.
   </div>
   <div class="card" style="padding:14px;">
     <div class="field-row">
-      <div class="field"><label>Date *</label><input type="date" id="ec-c-date" onchange="ecControlPreview()" /></div>
-      <div class="field"><label>Compte *</label><select id="ec-c-account" onchange="ecControlPreview()"></select></div>
+      <div class="field"><label>Date du comptage *</label><input type="date" id="ec-c-date" onchange="ecControlPreview()" /></div>
+      <div class="field"><label>Compté par</label><input type="text" id="ec-c-by" placeholder="Nom de la personne" /></div>
     </div>
-    <div class="field"><label>Montant compté (FCFA) *</label><input type="number" id="ec-c-amount" min="0" oninput="ecControlPreview()" /></div>
+    <div class="ec-group-label" style="margin:6px 0;">💵 Caisse — billets et pièces</div>
+    <div id="ec-c-billetage" class="ec-billetage"></div>
+    <div class="field-row">
+      <div class="field"><label>📱 Solde Mobile Money relevé</label><input type="number" id="ec-c-mm" min="0" placeholder="Laisser vide si non relevé" oninput="ecControlPreview()" /></div>
+      <div class="field"><label>🏛 Solde banque relevé</label><input type="number" id="ec-c-bank" min="0" placeholder="Laisser vide si non relevé" oninput="ecControlPreview()" /></div>
+    </div>
     <div id="ec-c-preview" class="ec-c-preview"></div>
-    <div class="field"><label>Note</label><textarea id="ec-c-note" rows="2" placeholder="Qui a compté, observations…"></textarea></div>
+    <div class="field"><label>Note</label><textarea id="ec-c-note" rows="2" placeholder="Observations…"></textarea></div>
     <label class="ec-check" style="margin-bottom:12px;"><input type="checkbox" id="ec-c-book" />
-      Passer l'écart en ajustement (le solde théorique s'aligne sur le comptage)</label>
-    <button class="btn btn-primary btn-full" onclick="ecSaveControl()">Enregistrer le contrôle</button>
+      Passer les écarts en ajustement (les soldes théoriques s'alignent sur le comptage)</label>
+    <button class="btn btn-primary btn-full" onclick="ecSaveControl()">Enregistrer l'inventaire</button>
   </div>
 </div>
 
@@ -845,6 +850,8 @@ window.addEventListener('load', async () => {
   try { await requireAdmin(); } catch(e) { return; }
   initColorSwatches();
   loadAll();
+  openInventaireFromHash();
+  window.addEventListener('hashchange', openInventaireFromHash);
 });
 
 function checkPin() {
@@ -872,6 +879,14 @@ async function loadAll() {
 }
 
 // ── Tabs ──────────────────────────────────────────────────────
+// Lien « Faire le comptage » du bandeau d'inventaire : admin.html#inventaire
+function openInventaireFromHash() {
+  if (location.hash !== '#inventaire') return;
+  const btn = [...document.querySelectorAll('.tab-btn')].find(b => b.getAttribute('onclick') === "switchTab('caisse')");
+  if (btn) { btn.click(); ecOpenControl(); }
+  history.replaceState(null, '', location.pathname);
+}
+
 function switchTab(name) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
